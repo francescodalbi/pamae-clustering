@@ -25,7 +25,6 @@ print(ds_import.collect()[0])
 ### Genere chiave rnd, calcolo il modulo e lo assegno alle tuple
 def random_mod(x):
     #m = numero di campioni desiderati
-    m = 3
     rnd = random.randrange(0,9)
     mod = rnd % bin
     return mod, x
@@ -59,79 +58,12 @@ def myfunc(x):
 #print(ds_samples.collect())
 
 
-n = 2 # numero di elementi che desideri prendere per ogni gruppo
-
-
+n = 4 # numero di elementi che desideri prendere per ogni gruppo
 
 ds_samples = ds_grouped.map(lambda x: (x[0], x[1][:n]))
 
 #print(ds_samples.collect()[1])
 
-
-
-
-'''def kMedoids(D, k, tmax=100):
-    # determine dimensions of distance matrix D
-    m, n = D.shape
-
-    if k > n:
-        raise Exception('too many medoids')
-
-    # find a set of valid initial cluster medoid indices since we
-    # can't seed different clusters with two points at the same location
-    valid_medoid_inds = set(range(n))
-    invalid_medoid_inds = set([])
-    rs,cs = np.where(D==0)
-    # the rows, cols must be shuffled because we will keep the first duplicate below
-    index_shuf = list(range(len(rs)))
-    np.random.shuffle(index_shuf)
-    rs = rs[index_shuf]
-    cs = cs[index_shuf]
-    for r,c in zip(rs,cs):
-        # if there are two points with a distance of 0...
-        # keep the first one for cluster init
-        if r < c and r not in invalid_medoid_inds:
-            invalid_medoid_inds.add(c)
-    valid_medoid_inds = list(valid_medoid_inds - invalid_medoid_inds)
-
-    if k > len(valid_medoid_inds):
-        raise Exception('too many medoids (after removing {} duplicate points)'.format(
-            len(invalid_medoid_inds)))
-
-    # randomly initialize an array of k medoid indices
-    M = np.array(valid_medoid_inds)
-    np.random.shuffle(M)
-    M = np.sort(M[:k])
-
-    # create a copy of the array of medoid indices
-    Mnew = np.copy(M)
-
-    # initialize a dictionary to represent clusters
-    C = {}
-    for t in range(tmax):
-        # determine clusters, i. e. arrays of data indices
-        J = np.argmin(D[:,M], axis=1)
-        for kappa in range(k):
-            C[kappa] = np.where(J==kappa)[0]
-        # update cluster medoids
-        for kappa in range(k):
-            J = np.mean(D[np.ix_(C[kappa],C[kappa])],axis=1)
-            j = np.argmin(J)
-            Mnew[kappa] = C[kappa][j]
-        np.sort(Mnew)
-        # check for convergence
-        if np.array_equal(M, Mnew):
-            break
-        M = np.copy(Mnew)
-    else:
-        # final update of cluster memberships
-        J = np.argmin(D[:,M], axis=1)
-        for kappa in range(k):
-            C[kappa] = np.where(J==kappa)[0]
-
-    # return results
-    return M, C
-'''
 
 def miafunz(x):
     print(x[0], x[1])
@@ -139,26 +71,6 @@ ds_samples.map(lambda x: miafunz(x)).collect()
 
 
 
-from sklearn.metrics.pairwise import pairwise_distances
-
-from sklearn.metrics.pairwise import pairwise_distances
-D = ds_samples.map(lambda x: (x[0], pairwise_distances(x[1], metric='euclidean')))
-print(D.collect()[1])
-
-#M = D.map(lambda x: (x[0], kMedoids(x[1], 2)))
-#print(M.collect()[)
-
-
-'''print('medoids:')
-for point_idx in M.collect():
-    print( data[point_idx] )
-
-import kmedoids
-km = kmedoids.KMedoids(2, method='fasterpam')
-c = D.map(lambda x:km.fit(x[1]))
-#print("Loss is:", c.take(1))
-print(c.collect())
-'''
 
 
 
