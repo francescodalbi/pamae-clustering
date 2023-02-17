@@ -1,94 +1,108 @@
-from typing import Iterable, Tuple, NamedTuple
+from typing import Iterable, Tuple, NamedTuple, List
+from collections.abc import Sequence
 
 import random
 import numpy as np
+import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
 
-
 # Create SparkSession
-spark= SparkSession.builder \
-      .master("local[*]") \
-      .appName("PAMAE") \
-      .getOrCreate()
+spark = SparkSession.builder \
+    .master("local[*]") \
+    .appName("PAMAE") \
+    .getOrCreate()
 
 sc = spark.sparkContext
 bin = 3
-ds_import= sc.textFile("google_review_ratings.csv").map(lambda line: line.split(",")).map(lambda x: conversione(x))
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings.csv").map(lambda line: line.split(",")).map(
+    lambda x: to_float_conversion(x)
+)
 
-def conversione(x):
-    #print(map(float, x))
-    float_lst = list(np.float_(x))
+
+def to_float_conversion(l: List[str]) -> np.ndarray[float]:
+    float_lst = np.float_(l)
     return float_lst
+
 
 print(type(ds_import.collect()[0]))
 print(ds_import.collect()[0])
 
-
-### Genere chiave rnd, calcolo il modulo e lo assegno alle tuple
-def random_mod(x):
-    #m = numero di campioni desiderati
-    rnd = random.randrange(0,9)
-    mod = rnd % bin
-    return mod, x
-
-ds_with_mod = ds_import.map(lambda x: random_mod(x))
-
-
-###
-
-print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
-
-ds_grouped = sc.parallelize((ds_with_mod.groupByKey().mapValues(list).collect()))
-
-#print(ds_grouped.take(1))
-
-def myfunc(x):
-    sample_size = 10
-
-    #nuovo_array = np.empty([bin, 25], dtype=float)
-
-    #nuovo_array = np.array(x[1][:sample_size])
-    nuovo_array = np.array(x[1])
-    print(nuovo_array.size)
-
-    nuovo_array = np.insert(nuovo_array, 0, 99.99)
-    #np.append(nuovo_array, added)
-
-    return nuovo_array
-
-#ds_samples = ds_grouped.map(lambda x: myfunc(x))
-#print(ds_samples.collect())
-
-
-n = 4 # numero di elementi che desideri prendere per ogni gruppo
-
-ds_samples = ds_grouped.map(lambda x: (x[0], x[1][:n]))
-
-#print(ds_samples.collect())
-
-
+"""
 def miafunz(x):
     print(x[0], x[1][0], x[1][0][0])
     print(" ")
     print(type(x[0]), type(x[1][0]), type(x[1][0][0]))
 ds_samples.map(lambda x: miafunz(x)).collect()
+"""
 
 
-def phase_1(dataset: np.ndarray, k: int) -> np.ndarray:
-    samples = get_random_samples(dataset)
+def distributed_sampling_and_global_search(
+        dataset: ps.RDD[np.ndarray[float]],
+        n_bins: int,
+        sample_size: int,
+        t: int
+) -> np.ndarray:
+    """
+    Phase 1 of the algorithm presented in the PAMAE paper
+    :param sample_size:
+    :param n_bins:
+    :param number_of_clusters:
+    :param dataset:
+    :return:
+    """
 
-    # TODO Distributed global search
+    samples = get_random_samples(dataset, m=n_bins, n=sample_size)
+
+    # TODO Implement distributed global search on each sample
     sample_medoids = []
-    for i in range(0, k):
-        best_medoids_i = global_search(samples, k)
+    for i in range(0, t):
+        best_medoids_i = global_search(samples, t)
         sample_medoids.append(best_medoids_i)
 
     # TODO find best medoids
     return min(sample_medoids)
 
 
-class GlobalSearchResult(NamedTuple):
+class Sample(NamedTuple):
+    key: int
+    rows: np.ndarray[np.ndarray[float]]
+
+
+class Bin(Sample):
+    """
+    Creo una classe per definire un tipo di dato che uso spesso.
+    In questo caso dato che Bin è lo stesso tipo di dato di Sample, lo passo come parametro e Bin eredita le proprietà
+    di Sample.
+    """
+    pass
+
+
+def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps.RDD[Sample]:
+    # TODO Genere chiave rnd, calcolo il modulo e lo assegno alle tuple
+
+    def random_mod(row: np.ndarray[float]) -> Tuple[int, np.ndarray[float]]:
+        # m = numero di campioni desiderati
+        rnd = random.randrange(0, 9)
+        mod = rnd % m
+        return mod, row
+
+    ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
+    print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
+
+    # TODO List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
+    # https://docs.python.org/3/library/typing.html
+    ds_grouped: ps.RDD[Tuple[int, np.ndarray[np.ndarray[float]]]] = sc.parallelize(
+        ds_with_mod.groupByKey().mapValues(np.array).collect())
+
+    def get_first_n_of_bin(bin_: Tuple[int, np.ndarray[np.ndarray[float]]]) -> Sample:
+        return Sample(key=bin_[0], rows=bin_[1][:n])
+
+    ds_samples: ps.RDD[Sample] = ds_grouped.map(get_first_n_of_bin)
+    return ds_samples
+
+
+class SearchResult(NamedTuple):
     medoid_ids: np.ndarray
     """
     Collection of ids that allow to identify the medoids in the full dataset
@@ -96,11 +110,12 @@ class GlobalSearchResult(NamedTuple):
 
     total_error: float
     """
-    Sum of the distances 
+    Sum of the errors (distances of each object from the medoid) of 
+    all the clusters (identified by each medoid)
     """
 
 
-def global_search(sample: np.ndarray | Iterable[float], k: int) -> GlobalSearchResult:
+def global_search(sample: np.ndarray | Iterable[float], k: int) -> SearchResult:
     """
     Phase I except for the sampling part
 
@@ -132,7 +147,14 @@ def global_search(sample: np.ndarray | Iterable[float], k: int) -> GlobalSearchR
     pass
 
 
-def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> :
+def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
+    """
+    Phase 2 of the algorithm presented in the PAMAE paper
+
+    :param best_medoids: collection of the (ids of the) best medoids found in phase 1
+    :param dataset: full dataset
+    :return: array containing k clusters, each of which is represented by collection of data points
+    """
     # 1. Identificare i cluster rispetto ai best_medoids e al dataset intero (punto 2. + 3. di global_search())
     # 2. Per ogni cluster_i. esegui global_search(sample=cluster_i, k=1)
     # 3. Con i medoidi ottenuti al punto 2., calcolo i cluster definitivi
@@ -153,6 +175,3 @@ def all_distances(sample: np.ndarray | Iterable[float]) -> np.ndarray:
     """
 
     return manhattan_distances(sample, sample)
-
-
-
