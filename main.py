@@ -16,7 +16,7 @@ spark = SparkSession.builder \
 
 sc = spark.sparkContext
 bin = 3
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings.csv").map(lambda line: line.split(",")).map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings_2columns_150rows.csv").map(lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x)
 )
 
@@ -45,8 +45,9 @@ def distributed_sampling_and_global_search(
     """
 
     samples = get_random_samples(dataset, m=n_bins, n=sample_size)
+    print("SAMPLES:")
     print(samples.collect())
-    global_search(samples,2)
+    global_search(samples,t)
     # TODO Implement distributed global search on each sample
     sample_medoids = []
     for i in range(0, t):
@@ -97,12 +98,13 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     # TODO List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
     # https://docs.python.org/3/library/typing.html
     ds_grouped: ps.RDD[Tuple[int, np.ndarray[np.ndarray[float]]]] = sc.parallelize(
-        ds_with_mod.groupByKey().mapValues(np.array).collect())
+        ds_with_mod.groupByKey().mapValues(list).collect())
 
+    # TODO: capire perchè questa funzione fa esplodere tutto, è un mistero
     def get_first_n_of_bin(bin_: Tuple[int, np.ndarray[np.ndarray[float]]]) -> Sample:
-        return Sample(key=bin_[0], rows=bin_[1][:n])
+       return Sample(key=bin_[0], rows=bin_[1][:n])
 
-    ds_samples: ps.RDD[Sample] = ds_grouped.map(get_first_n_of_bin)
+    ds_samples = ds_grouped.map(lambda row: (row[0], row[1][:n]))
     return ds_samples
 
 
@@ -119,7 +121,7 @@ class SearchResult(NamedTuple):
     """
 
 
-def global_search(sample: ps.RDD , k: int) -> SearchResult:
+def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     """
     Phase I except for the sampling part
 
@@ -151,25 +153,22 @@ def global_search(sample: ps.RDD , k: int) -> SearchResult:
 
     #Passo 0
 
-#TEST FUNZIONE PER GENERARE COMBINAZIONI DI MEDOIDI
-from functools import reduce
-from itertools import chain
+    from itertools import combinations
+    def generate_combinations(s):
+        key, values = s
+        combos = list(itertools.combinations(values, k))
+        return (key, combos)
 
-def combinations_of_length_n(rdd, n):
-    # for n > 0
-    return reduce(
-        lambda a, b: a.cartesian(b).map(lambda x: tuple(chain.from_iterable(x))),
-        [rdd]*n
-    ).filter(lambda x: len(set(x))==n)
-
-#print(combinations_of_length_n(sample, n=2)).collect()
-
-
-
-
-
-
-
+    combinations = sample.map(generate_combinations)
+    print("count: ")
+    print(combinations.count())
+    #print(combinations.collect()
+    result = combinations.collect()
+    for r in result:
+        print("Key: {}".format(r[0]))
+        for c in r[1]:
+            print(c)
+        print("----------------------")
 
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
@@ -203,4 +202,4 @@ def all_distances(sample: ps.RDD) -> np.ndarray:
 
 
 
-distributed_sampling_and_global_search(ds_import, 3, 20, 2)
+distributed_sampling_and_global_search(ds_import, 2, 4, 2)
