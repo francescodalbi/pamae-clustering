@@ -176,19 +176,6 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         print(distances)
         print()
 
-    print("########################################################àz")
-
-    """def clustering(distances, medoids):
-        print(f"Distance: {distances}")
-        print(f"Medoids combo: {medoids}")
-
-
-
-    prova = distances.map(lambda row: clustering(row, medoids_combo))
-    print(prova.collect())"""
-    combinations = combinations.map(lambda x: (x[0], x))
-    joined_rdd = combinations.join(distances)
-    print(joined_rdd.collect())
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
     """
