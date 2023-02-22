@@ -45,17 +45,14 @@ def distributed_sampling_and_global_search(
     """
 
     samples = get_random_samples(dataset, m=n_bins, n=sample_size)
-    print("SAMPLES:")
     print(samples.collect())
     global_search(samples,t)
-    # TODO Implement distributed global search on each sample
     sample_medoids = []
-    for i in range(0, t):
+    """for i in range(0, t):
         best_medoids_i = global_search(samples, t)
         sample_medoids.append(best_medoids_i)
-
+    """
     # TODO find best medoids
-    return min(sample_medoids)
 
 
 
@@ -152,24 +149,46 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     #   5.2. Se NON le ho esaurite, torno al punto 1
 
     #Passo 0
-
-    from itertools import combinations
-    def generate_combinations(s):
-        key, values = s
+    def generate_combinations(row):
+        key, values = row
         combos = list(itertools.combinations(values, k))
         return (key, combos)
 
     combinations = sample.map(generate_combinations)
     print("count: ")
     print(combinations.count())
-    #print(combinations.collect()
     result = combinations.collect()
+
     for r in result:
-        print("Key: {}".format(r[0]))
+        print("Da sample: {}".format(r[0]))
         for c in r[1]:
             print(c)
         print("----------------------")
 
+
+    #Passo 1
+    rdd_distances = all_distances(sample)
+    # Stampa i risultati in modo leggibile
+    for row in rdd_distances.collect():
+        key = row.key
+        distances = row.distances
+        print(f"Key: {key}")
+        print(distances)
+        print()
+
+    print("########################################################àz")
+
+    """def clustering(distances, medoids):
+        print(f"Distance: {distances}")
+        print(f"Medoids combo: {medoids}")
+
+
+
+    prova = distances.map(lambda row: clustering(row, medoids_combo))
+    print(prova.collect())"""
+    combinations = combinations.map(lambda x: (x[0], x))
+    joined_rdd = combinations.join(distances)
+    print(joined_rdd.collect())
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
     """
@@ -197,8 +216,15 @@ def all_distances(sample: ps.RDD) -> np.ndarray:
     :param sample: set of objects (dataset rows) sampled from the full dataset
     :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
     """
+    from pyspark.sql import Row
+    def distances(values):
+        sample = np.array(values)
+        return print(type(manhattan_distances(sample, sample)))
 
-    return manhattan_distances(sample, sample)
+    #TODO: check differenza tra map e mapValues e a cosa serve Row che importo da pyspark.sql
+    return sample.mapValues(distances).map(lambda x: Row(key=x[0], distances=x[1]))
+
+
 
 
 
