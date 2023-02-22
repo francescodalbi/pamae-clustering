@@ -149,12 +149,9 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     #   5.2. Se NON le ho esaurite, torno al punto 1
 
     #Passo 0
-    def generate_combinations(row):
-        key, values = row
-        combos = list(itertools.combinations(values, k))
-        return (key, combos)
 
-    combinations = sample.map(generate_combinations)
+
+    """combinations = sample.map(generate_combinations)
     print("count: ")
     print(combinations.count())
     result = combinations.collect()
@@ -163,10 +160,10 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         print("Da sample: {}".format(r[0]))
         for c in r[1]:
             print(c)
-        print("----------------------")
+        print("----------------------")"""
 
 
-    #Passo 1
+    """#Passo 1
     rdd_distances = all_distances(sample)
     # Stampa i risultati in modo leggibile
     for row in rdd_distances.collect():
@@ -174,7 +171,50 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         distances = row.distances
         print(f"Key: {key}")
         print(distances)
-        print()
+        print()"""
+
+    def generate_combinations(row):
+        key, values = row
+        combos = list(itertools.combinations(values, k))
+        return (key, combos)
+
+    def distances(values):
+        sample = np.array(values)
+        return manhattan_distances(sample, sample)
+
+    from pyspark.sql import Row
+
+    # definisci una funzione che elabora una singola riga del RDD
+    def process_row(row):
+        key = row[0]
+        values = row[1]
+        combinations = generate_combinations((key, values))
+        distance_matrix = distances(values)
+        return (key, (combinations, distance_matrix))
+
+    # applica la funzione ad ogni riga dell'RDD sample
+    rdd3 = sample.map(process_row)
+    result = rdd3.collect()
+
+    for r in result:
+        print(f"Key: {r[0]}")
+        print("Combinations:")
+        for c in r[1][0][1]:
+            print(c)
+        print("Distances:")
+        print(r[1][1])
+
+    #per accedere alla lista di combinazioni combinationazioni = result[0][0][1]
+    #per fare la stessa cosa per le dist faccio distanze = result[0][1]
+
+
+
+
+
+
+
+
+
 
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
@@ -206,7 +246,7 @@ def all_distances(sample: ps.RDD) -> np.ndarray:
     from pyspark.sql import Row
     def distances(values):
         sample = np.array(values)
-        return print(type(manhattan_distances(sample, sample)))
+        return manhattan_distances(sample, sample)
 
     #TODO: check differenza tra map e mapValues e a cosa serve Row che importo da pyspark.sql
     return sample.mapValues(distances).map(lambda x: Row(key=x[0], distances=x[1]))
