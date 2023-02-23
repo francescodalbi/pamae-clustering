@@ -150,29 +150,6 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
     #Passo 0
 
-
-    """combinations = sample.map(generate_combinations)
-    print("count: ")
-    print(combinations.count())
-    result = combinations.collect()
-
-    for r in result:
-        print("Da sample: {}".format(r[0]))
-        for c in r[1]:
-            print(c)
-        print("----------------------")"""
-
-
-    """#Passo 1
-    rdd_distances = all_distances(sample)
-    # Stampa i risultati in modo leggibile
-    for row in rdd_distances.collect():
-        key = row.key
-        distances = row.distances
-        print(f"Key: {key}")
-        print(distances)
-        print()"""
-
     def generate_combinations(row):
         key, values = row
         combos = list(itertools.combinations(values, k))
@@ -209,12 +186,27 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
 
 
+    print("PROVAAAA")
+    for r in result:
+        print(f"Key: {r[0]}")
+        print("Combinations:")
+        combinations = r[1][0][1]
+        distances = r[1][1]
+        k = len(combinations[0])
+        for i in range(len(combinations)):
+            print(combinations[i])
+            start = i * k
+            end = start + k
+            print(distances[start:end])
+        print()
 
-
-
-
-
-
+        """for r in result:
+            print(f"Key: {r[0]}")
+            print("Combinations:")
+            for c in range([1][0][1]):
+                print(c)
+                print("Distances:")
+                print(r[1][1])"""
 
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
