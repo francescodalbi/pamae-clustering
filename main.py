@@ -16,7 +16,7 @@ spark = SparkSession.builder \
 
 sc = spark.sparkContext
 bin = 3
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings_2columns_150rows.csv").map(lambda line: line.split(",")).map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings_original_3columns_5000rows.csv").map(lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x)
 )
 
@@ -167,8 +167,7 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         distance_matrix = distances(values)
 
         # Creo l'istanza del modello KMedoids
-        K = 2
-        kmedoids = KMedoids(n_clusters=K, metric='precomputed', max_iter=100)
+        kmedoids = KMedoids(n_clusters=k, metric='precomputed', max_iter=100)
 
         # Eseguo il clustering
         kmedoids.fit(distance_matrix)
@@ -183,7 +182,7 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         for i in range(len(values)):
             error += distance_matrix[i, medoids_idx[labels[i]]]
         # Recupero i punti appartenenti ai cluster
-        clusters = [[] for _ in range(K)]
+        clusters = [[] for _ in range(k)]
         for i, label in enumerate(labels):
             clusters[label].append(values[i])
 
@@ -207,12 +206,31 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         print(f"Medoidi:")
         for medoid in value['medoids']:
             print(medoid)
-            nuovo_array = np.concatenate((medoid, [value['error']])).reshape(1, -1)
-            errori = np.append(errori, nuovo_array, axis=0)
+
+        # aggiungi l'errore e i medoidi all'array degli errori
+        errori = np.append(errori, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
         print(f"Errore di clustering: {value['error']}")
         print()
 
-    print(errori)
+    # ordina gli errori in ordine crescente di valore
+    errori_ord = errori[errori[:, 2].argsort()]
+
+    # stampa il set di medoidi con l'errore minimo
+    print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
+    print(f"Errore minimo: {errori_ord[0, 2]}")
+
+    import matplotlib.pyplot as plt
+
+    for key, value in result:
+        plt.figure()
+        for i, cluster in enumerate(value['clusters']):
+            cluster = np.array(cluster)
+            plt.scatter(cluster[:, 0], cluster[:, 1], label=f"Cluster {i}")
+            medoid = np.array(value['medoids'][i])
+            plt.scatter(medoid[0], medoid[1], marker='x', s=200, linewidths=3, color='r')
+        plt.legend()
+        plt.title(f"Campione {key}")
+        plt.show()
 
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
@@ -253,4 +271,4 @@ def all_distances(sample: ps.RDD) -> np.ndarray:
 
 
 
-distributed_sampling_and_global_search(ds_import, 2, 40, 2)
+distributed_sampling_and_global_search(ds_import, 2, 500, 3)
