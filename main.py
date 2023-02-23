@@ -193,8 +193,13 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         combinations = r[1][0][1]
         distances = r[1][1]
         k = len(combinations[0])
+        #k=2
         for i in range(len(combinations)):
-            print(combinations[i])
+            #len(combinations) = 6
+            """ogni combinazione ha k elementi, l'indice del primo elemento della combinazione corrente all'interno 
+            della matrice delle distanze sarà i*k. 
+            Esempio, se k=2 e i=1, l'indice del primo elemento della seconda combinazione all'interno della matrice 
+            delle distanze sarà 2."""
             start = i * k
             end = start + k
             print(distances[start:end])
