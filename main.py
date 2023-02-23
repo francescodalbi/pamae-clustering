@@ -161,23 +161,58 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     def process_row(campione):
         key = campione[0]
         values = campione[1]
+        from sklearn_extra.cluster import KMedoids
+
+        # Calcolo la matrice di distanza
         distance_matrix = distances(values)
 
-        # ciclo su tutte le coppie di array in values
-        for i in range(len(values)):
-            for j in range(i + 1, len(values)):
-                # stampo le informazioni divise per campione
-                print(f"CAMPIONE {key}: {values[i]} {values[j]}")
-                print(distance_matrix[i][j])
-                print()
+        # Creo l'istanza del modello KMedoids
+        K = 2
+        kmedoids = KMedoids(n_clusters=K, metric='precomputed', max_iter=100)
 
-        return None  # ritorno None poiché non devo restituire alcun valore
+        # Eseguo il clustering
+        kmedoids.fit(distance_matrix)
+
+        # Recupero i medoidi
+        medoids_idx = kmedoids.medoid_indices_
+        medoids = [values[idx] for idx in medoids_idx]
+
+        # Calcolo l'errore di clustering
+        labels = kmedoids.labels_
+        error = 0
+        for i in range(len(values)):
+            error += distance_matrix[i, medoids_idx[labels[i]]]
+        # Recupero i punti appartenenti ai cluster
+        clusters = [[] for _ in range(K)]
+        for i, label in enumerate(labels):
+            clusters[label].append(values[i])
+
+
+        return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
 
     # applica la funzione ad ogni riga dell'RDD sample
     rdd3 = sample.map(process_row)
-    print(rdd3.collect())
+    # Inizializza la matrice degli errori e dei medoidi
+    # inizializza l'array degli errori
+    errori = np.empty([0, 3])
 
-    # rdd3 conterrà tutti valori None poiché process_row non restituisce nulla
+    # stampa i risultati
+    result = rdd3.collect()
+    for key, value in result:
+        print(f"Campione {key}:")
+        for i, cluster in enumerate(value['clusters']):
+            print(f"Cluster {i}:")
+            for point in cluster:
+                print(point)
+        print(f"Medoidi:")
+        for medoid in value['medoids']:
+            print(medoid)
+            nuovo_array = np.concatenate((medoid, [value['error']])).reshape(1, -1)
+            errori = np.append(errori, nuovo_array, axis=0)
+        print(f"Errore di clustering: {value['error']}")
+        print()
+
+    print(errori)
 
 
 def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
@@ -218,4 +253,4 @@ def all_distances(sample: ps.RDD) -> np.ndarray:
 
 
 
-distributed_sampling_and_global_search(ds_import, 2, 4, 2)
+distributed_sampling_and_global_search(ds_import, 2, 40, 2)
