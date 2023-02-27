@@ -6,6 +6,8 @@ import numpy as np
 import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
+from sklearn_extra.cluster import KMedoids
+
 import itertools
 
 # Create SparkSession
@@ -16,7 +18,7 @@ spark = SparkSession.builder \
 
 sc = spark.sparkContext
 bin = 3
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("google_review_ratings_original_3columns_5000rows.csv").map(lambda line: line.split(",")).map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_150rows.csv").map(lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x)
 )
 
@@ -150,18 +152,25 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
     #Passo 0
 
+    # definisci una funzione che elabora una singola riga del RDD
 
-    def distances(values):
+    def distances(values: list) -> np.ndarray:
+        """
+            >>> all_distances([[1, 2], [3, 4]])
+            >>> np.ndarray([\
+                [0., 4.],\
+                [4., 0.]\
+                ])
+
+            :param sample: set of objects (dataset rows) sampled from the full dataset
+            :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
+            """
         sample = np.array(values)
         return manhattan_distances(sample, sample)
 
-    from pyspark.sql import Row
-
-    # definisci una funzione che elabora una singola riga del RDD
     def process_row(campione):
         key = campione[0]
         values = campione[1]
-        from sklearn_extra.cluster import KMedoids
 
         # Calcolo la matrice di distanza
         distance_matrix = distances(values)
@@ -189,6 +198,7 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
         return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
 
+
     # applica la funzione ad ogni riga dell'RDD sample
     rdd3 = sample.map(process_row)
     # Inizializza la matrice degli errori e dei medoidi
@@ -197,6 +207,8 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
     # stampa i risultati
     result = rdd3.collect()
+
+    #STAMPO I RISULTATI
     for key, value in result:
         print(f"Campione {key}:")
         for i, cluster in enumerate(value['clusters']):
@@ -219,6 +231,10 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
     print(f"Errore minimo: {errori_ord[0, 2]}")
 
+    best_medoids = errori_ord[0, 0:2]
+
+
+    #PLOT dei risultati
     import matplotlib.pyplot as plt
 
     for key, value in result:
@@ -245,30 +261,46 @@ def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
     # 2. Per ogni cluster_i. esegui global_search(sample=cluster_i, k=1)
     # 3. Con i medoidi ottenuti al punto 2., calcolo i cluster definitivi
 
-    pass
+    k = len(best_medoids)
 
 
-def all_distances(sample: ps.RDD) -> np.ndarray:
-    """
-    >>> all_distances([[1, 2], [3, 4]])
-    >>> np.ndarray([\
-        [0., 4.],\
-        [4., 0.]\
-        ])
+    def distances(values: list) -> np.ndarray:
+        """
+            >>> all_distances([[1, 2], [3, 4]])
+            >>> np.ndarray([\
+                [0., 4.],\
+                [4., 0.]\
+                ])
 
-    :param sample: set of objects (dataset rows) sampled from the full dataset
-    :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
-    """
-    from pyspark.sql import Row
-    def distances(values):
+            :param sample: set of objects (dataset rows) sampled from the full dataset
+            :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
+            """
         sample = np.array(values)
         return manhattan_distances(sample, sample)
 
-    #TODO: check differenza tra map e mapValues e a cosa serve Row che importo da pyspark.sql
-    return sample.mapValues(distances).map(lambda x: Row(key=x[0], distances=x[1]))
+    def process_row(campione):
+        key = campione[0]
+        values = campione[1]
+        distance_matrix = distances(values)
+
+        # Definizione del modello K-Medoids con il numero di cluster pari a 2 (dato che best_medoids ha due elementi)
+        kmedoids_model = KMedoids(n_clusters=k, init=best_medoids)
+
+        # Addestramento del modello sul dataset completo
+        kmedoids_model.fit(distance_matrix)
+
+        # Predizione dei cluster di appartenenza per ogni punto nel dataset
+        cluster_labels = kmedoids_model.predict(dataset)
+
+    rdd_refinement = dataset.map(process_row)
+
+    # Indici dei punti in ogni cluster
+    clusters = [[] for _ in range(k)]
+    for i, label in enumerate(cluster_labels):
+        clusters[label].append(i)
+
+    return [np.array(cluster) for cluster in clusters]
 
 
 
-
-
-distributed_sampling_and_global_search(ds_import, 2, 500, 3)
+distributed_sampling_and_global_search(ds_import, 2, 120, 2)
