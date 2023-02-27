@@ -7,6 +7,7 @@ import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn_extra.cluster import KMedoids
+import matplotlib.pyplot as plt
 
 import itertools
 
@@ -48,16 +49,8 @@ def distributed_sampling_and_global_search(
 
     samples = get_random_samples(dataset, m=n_bins, n=sample_size)
     print(samples.collect())
-    global_search(samples,t)
-    sample_medoids = []
-    """for i in range(0, t):
-        best_medoids_i = global_search(samples, t)
-        sample_medoids.append(best_medoids_i)
-    """
-    # TODO find best medoids
-
-
-
+    best_medoids = global_search(samples,t)
+    refinement(best_medoids, dataset)
 class Sample(NamedTuple):
     key: int
     rows: np.ndarray[np.ndarray[float]]
@@ -154,51 +147,10 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
 
     # definisci una funzione che elabora una singola riga del RDD
 
-    def distances(values: list) -> np.ndarray:
-        """
-            >>> all_distances([[1, 2], [3, 4]])
-            >>> np.ndarray([\
-                [0., 4.],\
-                [4., 0.]\
-                ])
-
-            :param sample: set of objects (dataset rows) sampled from the full dataset
-            :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
-            """
-        sample = np.array(values)
-        return manhattan_distances(sample, sample)
-
     def process_row(campione):
         key = campione[0]
         values = campione[1]
-
-        # Calcolo la matrice di distanza
-        distance_matrix = distances(values)
-
-        # Creo l'istanza del modello KMedoids
-        kmedoids = KMedoids(n_clusters=k, metric='precomputed', max_iter=100)
-
-        # Eseguo il clustering
-        kmedoids.fit(distance_matrix)
-
-        # Recupero i medoidi
-        medoids_idx = kmedoids.medoid_indices_
-        medoids = [values[idx] for idx in medoids_idx]
-
-        # Calcolo l'errore di clustering
-        labels = kmedoids.labels_
-        error = 0
-        for i in range(len(values)):
-            error += distance_matrix[i, medoids_idx[labels[i]]]
-        # Recupero i punti appartenenti ai cluster
-        clusters = [[] for _ in range(k)]
-        for i, label in enumerate(labels):
-            clusters[label].append(values[i])
-
-
-        return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
-
-
+        return clustering(key, values, k)
     # applica la funzione ad ogni riga dell'RDD sample
     rdd3 = sample.map(process_row)
     # Inizializza la matrice degli errori e dei medoidi
@@ -247,9 +199,8 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         plt.legend()
         plt.title(f"Campione {key}")
         plt.show()
-
-
-def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
+    return best_medoids
+def refinement(best_medoids: np.ndarray, dataset: ps.RDD) -> np.ndarray:
     """
     Phase 2 of the algorithm presented in the PAMAE paper
 
@@ -263,6 +214,64 @@ def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
 
     k = len(best_medoids)
 
+    def process_row(campione):
+        key = campione[0]
+        values = campione[1]
+        return clustering(key, values, k)
+    rdd_refinement = dataset.map(process_row)
+    # Inizializza la matrice degli errori e dei medoidi
+    # inizializza l'array degli errori
+    errori = np.empty([0, 3])
+
+    # stampa i risultati
+    result = rdd_refinement.collect()
+
+    # STAMPO I RISULTATI
+    for key, value in result:
+        print(f"Campione {key}:")
+        for i, cluster in enumerate(value['clusters']):
+            print(f"Cluster {i}:")
+            for point in cluster:
+                print(point)
+        print(f"Medoidi:")
+        for medoid in value['medoids']:
+            print(medoid)
+
+        # aggiungi l'errore e i medoidi all'array degli errori
+        errori = np.append(errori, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
+        print(f"Errore di clustering: {value['error']}")
+        print()
+
+    # ordina gli errori in ordine crescente di valore
+    errori_ord = errori[errori[:, 2].argsort()]
+
+    # stampa il set di medoidi con l'errore minimo
+    print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
+    print(f"Errore minimo: {errori_ord[0, 2]}")
+
+    best_medoids = errori_ord[0, 0:2]
+
+    # PLOT dei risultati
+
+    for key, value in result:
+        plt.figure()
+    for i, cluster in enumerate(value['clusters']):
+        cluster = np.array(cluster)
+        plt.scatter(cluster[:, 0], cluster[:, 1], label=f"Cluster {i}")
+        medoid = np.array(value['medoids'][i])
+        plt.scatter(medoid[0], medoid[1], marker='x', s=200, linewidths=3, color='r')
+        plt.legend()
+        plt.title(f"Campione {key}")
+        plt.show()
+
+def clustering(key: int, distanze: np.ndarray, k: int, best_medoids: ):
+    """
+
+    :param key: the key that identify each sample
+    :param distanze: values from samples
+    :param k: number of clusters
+    :return:
+    """
 
     def distances(values: list) -> np.ndarray:
         """
@@ -278,29 +287,30 @@ def refinement(best_medoids: np.ndarray, dataset: np.ndarray) -> np.ndarray:
         sample = np.array(values)
         return manhattan_distances(sample, sample)
 
-    def process_row(campione):
-        key = campione[0]
-        values = campione[1]
-        distance_matrix = distances(values)
+    # Calcolo la matrice di distanza
+    distance_matrix = distances(distanze)
 
-        # Definizione del modello K-Medoids con il numero di cluster pari a 2 (dato che best_medoids ha due elementi)
-        kmedoids_model = KMedoids(n_clusters=k, init=best_medoids)
+    # Creo l'istanza del modello KMedoids
+    kmedoids = KMedoids(n_clusters=k, metric='precomputed', max_iter=100)
 
-        # Addestramento del modello sul dataset completo
-        kmedoids_model.fit(distance_matrix)
+    # Eseguo il clustering
+    kmedoids.fit(distance_matrix)
 
-        # Predizione dei cluster di appartenenza per ogni punto nel dataset
-        cluster_labels = kmedoids_model.predict(dataset)
+    # Recupero i medoidi
+    medoids_idx = kmedoids.medoid_indices_
+    medoids = [distanze[idx] for idx in medoids_idx]
 
-    rdd_refinement = dataset.map(process_row)
-
-    # Indici dei punti in ogni cluster
+    # Calcolo l'errore di clustering
+    labels = kmedoids.labels_
+    error = 0
+    for i in range(len(distanze)):
+        error += distance_matrix[i, medoids_idx[labels[i]]]
+    # Recupero i punti appartenenti ai cluster
     clusters = [[] for _ in range(k)]
-    for i, label in enumerate(cluster_labels):
-        clusters[label].append(i)
+    for i, label in enumerate(labels):
+        clusters[label].append(distanze[i])
 
-    return [np.array(cluster) for cluster in clusters]
-
+    return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
 
 
 distributed_sampling_and_global_search(ds_import, 2, 120, 2)
