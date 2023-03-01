@@ -235,57 +235,18 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
     rdd_refinement = rdd_tuple.map(process_row)
     result = rdd_refinement.collect()
 
-    # STAMPO I RISULTATI
-    for i in result:
-        print("Medoids: ")
-        for medoid in i['medoids']:
-            print(medoid)
-        print("Clusters: ")
-        for cluster in i['clusters']:
-            print(cluster)
+    import matplotlib.pyplot as plt
 
-
-""""
-    # STAMPO I RISULTATI
-    for key, value in result:
-        print(f"Campione {key}:")
-        for i, cluster in enumerate(value['clusters']):
-            print(f"Cluster {i}:")
-            for point in cluster:
-                print(point)
-        print(f"Medoidi:")
-        for medoid in value['medoids']:
-            print(medoid)
-
-        # aggiungi l'errore e i medoidi all'array degli errori
-        errori = np.append(errori, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
-        print(f"Errore di clustering: {value['error']}")
-        print()
-
-    # ordina gli errori in ordine crescente di valore
-    errori_ord = errori[errori[:, 2].argsort()]
-
-    # stampa il set di medoidi con l'errore minimo
-    print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
-    print(f"Errore minimo: {errori_ord[0, 2]}")
-
-    best_medoids = errori_ord[0, 0:2]
-
-    # PLOT dei risultati
-
-    for key, value in result:
+    for value in result:
         plt.figure()
-    for i, cluster in enumerate(value['clusters']):
-        cluster = np.array(cluster)
-        plt.scatter(cluster[:, 0], cluster[:, 1], label=f"Cluster {i}")
-        medoid = np.array(value['medoids'][i])
-        plt.scatter(medoid[0], medoid[1], marker='x', s=200, linewidths=3, color='r')
+        for i, cluster in enumerate(value['clusters']):
+            cluster = np.array(cluster)
+            plt.scatter(cluster[:, 0], cluster[:, 1], label=f"Cluster {i}")
+            medoid = np.array(value['medoids'][i])
+            plt.scatter(medoid[0], medoid[1], marker='x', s=200, linewidths=3, color='r')
         plt.legend()
-        plt.title(f"Campione {key}")
+        plt.title("Clusters on the full dataset")
         plt.show()
-"""
-
-
 
 def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
     """
@@ -315,10 +276,9 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
 
     # Creo l'istanza del modello KMedoids
     if best_medoids is None:
-        kmedoids = KMedoids(n_clusters=t, metric='precomputed')
+        kmedoids = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     else:
-        kmedoids = KMedoids(n_clusters=t, metric='precomputed', init='build', max_iter=0)
-
+        kmedoids = KMedoids(init=best_medoids, n_clusters=2, metric='precomputed')
     # Eseguo il clustering
     kmedoids.fit(distance_matrix)
 
@@ -326,7 +286,7 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
     medoids_idx = kmedoids.medoid_indices_
     medoids = [distanze[idx] for idx in medoids_idx]
 
-    # Calcolo l'errore di clustering
+    # Calcolo l'errore di clusterin
     labels = kmedoids.labels_
     error = 0
     for i in range(len(distanze)):
@@ -342,4 +302,8 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
         return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
 
 
+
+
+
+#INIZIO DELL'ALGORITMO
 distributed_sampling_and_global_search(ds_import, 2, 120, 2)
