@@ -3,11 +3,13 @@ from collections.abc import Sequence
 
 import random
 import numpy as np
+import pyclustering.utils
 import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn_extra.cluster import KMedoids
 import matplotlib.pyplot as plt
+from classeDePissio import ClasseDePissio
 
 import itertools
 
@@ -248,7 +250,7 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
         plt.title("Clusters on the full dataset")
         plt.show()
 
-def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
+def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
     """
 
     :param distanze: values from samples
@@ -257,6 +259,9 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
     :param key: the key that identify each samples (optional argument)
     :return:
     """
+
+    from pyclustering.cluster.kmedoids import kmedoids
+    from pyclustering.utils import calculate_distance_matrix
     def distances(values: list) -> np.ndarray:
         """
             >>> all_distances([[1, 2], [3, 4]])
@@ -276,18 +281,19 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
 
     # Creo l'istanza del modello KMedoids
     if best_medoids is None:
-        kmedoids = KMedoids(n_clusters=t, metric='precomputed', method="pam")
+        kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     else:
-        kmedoids = KMedoids(init=best_medoids, n_clusters=2, metric='precomputed')
+        kmedoids_ = ClasseDePissio(n_clusters=t, metric='precomputed', method="pam",best_medoids=best_medoids)
+        #kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     # Eseguo il clustering
-    kmedoids.fit(distance_matrix)
+    kmedoids_.fit(distance_matrix)
 
     # Recupero i medoidi
-    medoids_idx = kmedoids.medoid_indices_
+    medoids_idx = kmedoids_.medoid_indices_
     medoids = [distanze[idx] for idx in medoids_idx]
 
     # Calcolo l'errore di clusterin
-    labels = kmedoids.labels_
+    labels = kmedoids_.labels_
     error = 0
     for i in range(len(distanze)):
         error += distance_matrix[i, medoids_idx[labels[i]]]
