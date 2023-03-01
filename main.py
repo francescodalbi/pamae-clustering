@@ -49,8 +49,8 @@ def distributed_sampling_and_global_search(
 
     samples = get_random_samples(dataset, m=n_bins, n=sample_size)
     print(samples.collect())
-    best_medoids = global_search(samples,t)
-    refinement(best_medoids, dataset)
+    best_medoids = global_search(samples, t)
+    refinement(best_medoids, dataset, t)
 class Sample(NamedTuple):
     key: int
     rows: np.ndarray[np.ndarray[float]]
@@ -113,12 +113,12 @@ class SearchResult(NamedTuple):
     """
 
 
-def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
+def global_search(sample: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
     """
     Phase I except for the sampling part
 
     :param sample: collection of objects (rows) from the dataset
-    :param k: number of cluster (medoids)
+    :param t: number of cluster (medoids)
     :return: 1D array of k elements containing the indexes of the best medoids in
         the provided sample
     """
@@ -148,9 +148,12 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
     # definisci una funzione che elabora una singola riga del RDD
 
     def process_row(campione):
+        print("CAMPIONE: ", campione)
         key = campione[0]
         values = campione[1]
-        return clustering(key, values, k)
+        print("VALUES TYPE: ", type(values))
+        print("VALUES : ", values)
+        return clustering(values,t, None, key)
     # applica la funzione ad ogni riga dell'RDD sample
     rdd3 = sample.map(process_row)
     # Inizializza la matrice degli errori e dei medoidi
@@ -200,32 +203,38 @@ def global_search(sample: ps.RDD[np.ndarray[float]], k: int) -> SearchResult:
         plt.title(f"Campione {key}")
         plt.show()
     return best_medoids
-def refinement(best_medoids: np.ndarray, dataset: ps.RDD) -> np.ndarray:
+def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
     """
     Phase 2 of the algorithm presented in the PAMAE paper
-
     :param best_medoids: collection of the (ids of the) best medoids found in phase 1
     :param dataset: full dataset
+    :param t: number of clusters
     :return: array containing k clusters, each of which is represented by collection of data points
     """
     # 1. Identificare i cluster rispetto ai best_medoids e al dataset intero (punto 2. + 3. di global_search())
     # 2. Per ogni cluster_i. esegui global_search(sample=cluster_i, k=1)
     # 3. Con i medoidi ottenuti al punto 2., calcolo i cluster definitivi
 
-    k = len(best_medoids)
+    def process_row(row):
+        values = row[1]
+        # Converti la lista in un numpy array
+        #values = [np.array(row)]
+        print("VALUES TYPE: ", type(row))
+        print("VALUES: ", row)
+        return clustering(row, t, best_medoids)
 
-    def process_row(campione):
-        key = campione[0]
-        values = campione[1]
-        return clustering(key, values, k)
-    rdd_refinement = dataset.map(process_row)
-    # Inizializza la matrice degli errori e dei medoidi
+    rdd_array = sc.parallelize(dataset.map(lambda x: [x]).collect())
+    rdd_array_flat = rdd_array.flatMap(lambda x: x)
+    print(rdd_array_flat.collect())
+
+    rdd_refinement = rdd_array_flat.map(process_row)
     # inizializza l'array degli errori
     errori = np.empty([0, 3])
 
     # stampa i risultati
     result = rdd_refinement.collect()
 
+""""
     # STAMPO I RISULTATI
     for key, value in result:
         print(f"Campione {key}:")
@@ -263,16 +272,19 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD) -> np.ndarray:
         plt.legend()
         plt.title(f"Campione {key}")
         plt.show()
+"""
 
-def clustering(key: int, distanze: np.ndarray, k: int, best_medoids: ):
+
+
+def clustering(distanze: list, t:int, best_medoids = None, key: int = None, ):
     """
 
-    :param key: the key that identify each sample
     :param distanze: values from samples
-    :param k: number of clusters
+    :param t: number of clusters
+    :param best_medoids: set of best medoids from the  phase 1 (optional argument)
+    :param key: the key that identify each sample (optional argument)
     :return:
     """
-
     def distances(values: list) -> np.ndarray:
         """
             >>> all_distances([[1, 2], [3, 4]])
@@ -284,14 +296,17 @@ def clustering(key: int, distanze: np.ndarray, k: int, best_medoids: ):
             :param sample: set of objects (dataset rows) sampled from the full dataset
             :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
             """
-        sample = np.array(values)
-        return manhattan_distances(sample, sample)
+        data = np.array(values)
+        return manhattan_distances(data, data)
 
     # Calcolo la matrice di distanza
     distance_matrix = distances(distanze)
 
     # Creo l'istanza del modello KMedoids
-    kmedoids = KMedoids(n_clusters=k, metric='precomputed', max_iter=100)
+    if best_medoids is None:
+        kmedoids = KMedoids(n_clusters=t, metric='precomputed')
+    else:
+        kmedoids = KMedoids(n_clusters=t, metric='precomputed', init='build', max_iter=0)
 
     # Eseguo il clustering
     kmedoids.fit(distance_matrix)
@@ -306,7 +321,7 @@ def clustering(key: int, distanze: np.ndarray, k: int, best_medoids: ):
     for i in range(len(distanze)):
         error += distance_matrix[i, medoids_idx[labels[i]]]
     # Recupero i punti appartenenti ai cluster
-    clusters = [[] for _ in range(k)]
+    clusters = [[] for _ in range(t)]
     for i, label in enumerate(labels):
         clusters[label].append(distanze[i])
 
