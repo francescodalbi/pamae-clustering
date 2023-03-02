@@ -21,7 +21,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_150rows.csv").map(lambda line: line.split(",")).map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x)
 )
 
@@ -86,6 +86,7 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
 
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
     #print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
+
 
     # TODO List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
     # https://docs.python.org/3/library/typing.html
@@ -152,6 +153,7 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
     # ordina gli errori in ordine crescente di valore
     errori_ord = errors[errors[:, 2].argsort()]
 
+
     # stampa il set di medoidi con l'errore minimo
     print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
     print(f"Errore minimo: {errori_ord[0, 2]}")
@@ -160,6 +162,7 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
 
 
     #plot dei risultati
+    # plot dei risultati
     for key, value in result:
         plt.figure()
         for i, cluster in enumerate(value['clusters']):
@@ -279,4 +282,4 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
 
 
 #avvio dell'algoritmo
-distributed_sampling_and_global_search(ds_import, 2, 120, 2)
+distributed_sampling_and_global_search(ds_import, 3, 800, 2)
