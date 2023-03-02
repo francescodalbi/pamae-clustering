@@ -41,13 +41,13 @@ def distributed_sampling_and_global_search(
     :param dataset: original dataset
     :param n_bins: number of parts in which to divide the dataset
     :param sample_size: first n elements from each def_bin/partition of the original dataset
-    :param t: desired number of clusters????
+    :param t: desired number of clusters
     :return:
     """
 
     samples = get_random_samples(dataset, m=n_bins, n=sample_size)
     print(samples.collect())
-    best_medoids = global_search(samples, t)
+    best_medoids = global_search(samples, t, sample_size)
     refinement(best_medoids, dataset, t)
 
 
@@ -85,15 +85,15 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
         return mod, row
 
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
-    #print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
+    print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
 
-    # TODO List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
+
+    #List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
     # https://docs.python.org/3/library/typing.html
     ds_grouped: ps.RDD[Tuple[int, np.ndarray[np.ndarray[float]]]] = sc.parallelize(
         ds_with_mod.groupByKey().mapValues(list).collect())
 
-    # TODO: capire perchè questa funzione fa esplodere tutto, è un mistero
     def get_first_n_of_bin(bin_: Tuple[int, np.ndarray[np.ndarray[float]]]) -> Sample:
        return Sample(key=bin_[0], rows=bin_[1][:n])
 
@@ -114,7 +114,7 @@ class SearchResult(NamedTuple):
     """
 
 
-def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
+def global_search(samples: ps.RDD[np.ndarray[float]], t: int, sample_size: int) -> SearchResult:
     """
     Phase I except for the sampling part
 
@@ -153,10 +153,23 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
     # ordina gli errori in ordine crescente di valore
     errori_ord = errors[errors[:, 2].argsort()]
 
-
     # stampa il set di medoidi con l'errore minimo
     print(f"Set di medoidi migliori: {errori_ord[0, 0:2]}")
     print(f"Errore minimo: {errori_ord[0, 2]}")
+
+    print("---------------------------------------------------------")
+
+    # calcola gli errori relativi
+    normalized_errors = []
+
+    error_rel = errori_ord[0, 2] / sample_size
+    normalized_errors.append(error_rel)
+
+    print("Normalized Error: ", normalized_errors)
+
+
+
+
 
     best_medoids = errori_ord[0, 0:2]
 
@@ -174,6 +187,25 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
         plt.title(f"Campione {key}")
         plt.show()
 
+    """
+    PLOT IN 3 DIMENSIONI
+    from mpl_toolkits.mplot3d import Axes3D
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    for i, cluster in enumerate(value['clusters']):
+        cluster = np.array(cluster)
+        ax.scatter(cluster[:, 0], cluster[:, 1], cluster[:, 2], label=f"Cluster {i}")
+        medoid = np.array(value['clusters'][i])
+        ax.scatter(medoid[0], medoid[1], medoid[2], marker='x', s=200, linewidths=3, color='r')
+
+    ax.set_xlabel('X Label')
+    ax.set_ylabel('Y Label')
+    ax.set_zlabel('Z Label')
+    plt.legend()
+    plt.show()
+    """
     return best_medoids
 
 def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
@@ -201,6 +233,12 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
     print("RESULT: ")
     pp = pprint.PrettyPrinter(indent=2)
     pp.pprint(result)
+
+    #calcolo l'errore relativo (ponderato in base al numero di punti)
+    dataset_size = dataset.count()
+    total_error = result[-1]['error']
+    normalized_error = (total_error / dataset_size)
+    print("Normalized Error: ", normalized_error)
 
     #plot dei risultati
     for value in result:
@@ -282,4 +320,4 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
 
 
 #avvio dell'algoritmo
-distributed_sampling_and_global_search(ds_import, 3, 800, 2)
+distributed_sampling_and_global_search(ds_import, 2, 1100, 4)
