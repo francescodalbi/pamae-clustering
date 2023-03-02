@@ -1,4 +1,6 @@
+from sklearn.utils.extmath import stable_cumsum
 from sklearn_extra.cluster import KMedoids
+import numpy as np
 
 class ClasseDePissio(KMedoids):
 

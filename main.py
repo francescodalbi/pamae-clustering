@@ -1,15 +1,16 @@
 from typing import Iterable, Tuple, NamedTuple, List
-from collections.abc import Sequence
 
 import random
 import numpy as np
-import pyclustering.utils
 import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn_extra.cluster import KMedoids
-import matplotlib.pyplot as plt
 from classeDePissio import ClasseDePissio
+import matplotlib.pyplot as plt
+import json
+import pprint
+
 
 import itertools
 
@@ -24,13 +25,9 @@ ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratin
     lambda x: to_float_conversion(x)
 )
 
-
 def to_float_conversion(l: List[str]) -> np.ndarray[float]:
     float_lst = np.float_(l)
     return float_lst
-
-print(type(ds_import.collect()[0]))
-print(ds_import.collect()[0])
 
 def distributed_sampling_and_global_search(
         dataset: ps.RDD[np.ndarray[float]],
@@ -52,6 +49,8 @@ def distributed_sampling_and_global_search(
     print(samples.collect())
     best_medoids = global_search(samples, t)
     refinement(best_medoids, dataset, t)
+
+
 class Sample(NamedTuple):
     key: int
     rows: List[np.ndarray[float]]
@@ -86,7 +85,7 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
         return mod, row
 
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
-    print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
+    #print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
     # TODO List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
     # https://docs.python.org/3/library/typing.html
@@ -124,49 +123,17 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
         the provided sample
     """
 
-    # 0. Otteniamo tutte le combinazioni C di k medoidi sul samples intero:
-    #   C = [(m_0, ..., m_k), ...], dove ogni elemento m_i è l'indice del medoide all'interno del samples
-    # 1. selezioniamo k medoidi (una combinazione di quelle ottenute al passo 0.)
-    # 2. calcoliamo la matrice A di distanze di Manthattan (A=all_distances())
-    #   "2D matrix where element ij is the distance between object (row) i and object (row) j"
-    # 3. Calcoliamo i cluster: ottengo una lista [c_1, ..., c_k], dove c_i è
-    #       la lista di oggetti (righe) che compone il cluster i
-    #   3.0. sappiamo che:
-    #       - A è la matrice di distanze all_distances()
-    #       - m_0, ..., m_k sono (gli indici dei) medoidi -> es. riga_medoide_2 = samples[m_2]
-    #       - p è (l'indice del) punto da classificare
-    #   3.1. label_p = argmin(np.array(A[m_0, p], A[m_1, p], ..., A[m_n, p])):
-    #       il cluster (label/etichetta) di p è identificato dal medoide m_i la cui distanza da p è minima
-    #   3.2. Eseguo dunque il passo 3.1. per ogni indice p del samples e ottengo la lista descritta al punto 3.
-    # 4. Calcoliamo l'errore di ogni cluster (somma distanze da medoide) e poi
-    #   li sommiamo per ottenere l'errore totale della combinazioni di medoidi
-    # 5. Salviamo l'errore per la combinazione corrente e:
-    #   5.1. Se ho esaurito le combinazioni, scelgo quella dall'errore minore e la ritorno
-    #   5.2. Se NON le ho esaurite, torno al punto 1
+    #sample[0] = key
+    #sample[1] = values
+    rdd_global_search = samples.map(lambda sample: clustering(sample[1], t, None, sample[0]))
 
-    #Passo 0
-
-    # definisci una funzione che elabora una singola riga del RDD
-
-    def process_row(campione):
-        print("CAMPIONE: ", campione)
-        key = campione[0]
-        values = campione[1]
-        print("VALUES TYPE: ", type(values))
-        print("VALUES : ", values)
-        return clustering(values,t, None, key)
-
-
-    rdd_global_search = samples.map(process_row)
-
-    # Inizializza la matrice degli errori e dei medoidi
     # inizializza l'array degli errori
     errors = np.empty([0, 3])
 
-    # stampa i risultati
+    # salvo i risultati
     result = rdd_global_search.collect()
 
-    #STAMPO I RISULTATI
+    #stampo i risultati
     for key, value in result:
         print(f"Campione {key}:")
         for i, cluster in enumerate(value['clusters']):
@@ -192,9 +159,7 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
     best_medoids = errori_ord[0, 0:2]
 
 
-    #PLOT dei risultati
-    import matplotlib.pyplot as plt
-
+    #plot dei risultati
     for key, value in result:
         plt.figure()
         for i, cluster in enumerate(value['clusters']):
@@ -205,6 +170,7 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int) -> SearchResult:
         plt.legend()
         plt.title(f"Campione {key}")
         plt.show()
+
     return best_medoids
 
 def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
@@ -215,10 +181,8 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
     :param t: number of clusters
     :return: array containing k clusters, each of which is represented by collection of data points
     """
-    # 1. Identificare i cluster rispetto ai best_medoids e al dataset intero (punto 2. + 3. di global_search())
-    # 2. Per ogni cluster_i. esegui global_search(samples=cluster_i, k=1)
-    # 3. Con i medoidi ottenuti al punto 2., calcolo i cluster definitivi
 
+    #serializzo il collect di dataset per unire tutti gli array in una sola riga
     rdd_array = sc.parallelize(dataset.collect())
 
     # Otteniamo una lista di array dal RDD
@@ -227,18 +191,15 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> np.ndarray:
     # Creiamo una nuova RDD a partire dalla lista di array
     rdd_tuple = sc.parallelize([(array_list,)])
 
-    # Stampiamo la nuova RDD
-    print(rdd_tuple.collect())
-
-    def process_row(row):
-        return clustering(row[0], t, best_medoids)
-
-
-    rdd_refinement = rdd_tuple.map(process_row)
+    #eseguo in maniera distribuita il clustering, row[0] è l'insieme dei punti del dataset intero
+    rdd_refinement = rdd_tuple.map(lambda row: clustering(row[0], t, best_medoids))
     result = rdd_refinement.collect()
 
-    import matplotlib.pyplot as plt
+    print("RESULT: ")
+    pp = pprint.PrettyPrinter(indent=2)
+    pp.pprint(result)
 
+    #plot dei risultati
     for value in result:
         plt.figure()
         for i, cluster in enumerate(value['clusters']):
@@ -260,8 +221,6 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
     :return:
     """
 
-    from pyclustering.cluster.kmedoids import kmedoids
-    from pyclustering.utils import calculate_distance_matrix
     def distances(values: list) -> np.ndarray:
         """
             >>> all_distances([[1, 2], [3, 4]])
@@ -283,8 +242,10 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
     if best_medoids is None:
         kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     else:
-        kmedoids_ = ClasseDePissio(n_clusters=t, metric='precomputed', method="pam",best_medoids=best_medoids)
-        #kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
+        #ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
+        #medoidi desiderati
+        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",best_medoids=best_medoids, max_iter=0)
+
     # Eseguo il clustering
     kmedoids_.fit(distance_matrix)
 
@@ -292,16 +253,22 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
     medoids_idx = kmedoids_.medoid_indices_
     medoids = [distanze[idx] for idx in medoids_idx]
 
-    # Calcolo l'errore di clusterin
+    # Calcolo l'errore di clustering e assegno ad ogni punto il cluster di appartenenza
     labels = kmedoids_.labels_
     error = 0
     for i in range(len(distanze)):
         error += distance_matrix[i, medoids_idx[labels[i]]]
+
     # Recupero i punti appartenenti ai cluster
     clusters = [[] for _ in range(t)]
     for i, label in enumerate(labels):
         clusters[label].append(distanze[i])
 
+    """
+    nelle fase di global_search ho una key che identifica ogni sample, mentre nel refinement (lavorando sul dataset
+    intero), non ho questa chiave. quindi disinguo due tipi di return, uno con la chiave per distingure i medoidi
+    per campione, e l'altro (che verrà usato per il refinement) no.
+    """
     if key is None:
         return ({'medoids': medoids, 'clusters': clusters, 'error': error})
     else:
@@ -311,5 +278,5 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
 
 
 
-#INIZIO DELL'ALGORITMO
+#avvio dell'algoritmo
 distributed_sampling_and_global_search(ds_import, 2, 120, 2)
