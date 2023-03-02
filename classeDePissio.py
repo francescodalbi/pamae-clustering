@@ -65,44 +65,53 @@ class ClasseDePissio(KMedoids):
             # that it helped.
             n_local_trials = 2 + int(np.log(n_clusters))
 
-        #center_id = random_state_.randint(n_samples)
-        #centers[0] = center_id
-        centers[0] = self.best_medoids[1]
-        # Initialize list of closest distances and calculate current potential
-        closest_dist_sq = D[centers[0], :] ** 2
-        current_pot = closest_dist_sq.sum()
+        # Initialize with best medoids
+        centers = self.best_medoids.copy()
 
-        # pick the remaining n_clusters-1 points
-        for cluster_index in range(1, n_clusters):
-            rand_vals = (
-                random_state_.random_sample(n_local_trials) * current_pot
-            )
-            candidate_ids = np.searchsorted(
-                stable_cumsum(closest_dist_sq), rand_vals
-            )
+        # Inizializza i medoidi con quelli trovati precedentemente
 
-            # Compute distances to center candidates
-            distance_to_candidates = D[candidate_ids, :] ** 2
+        # Initialize list of closest distances and calculate current potential for each cluster
+        closest_dist_sq = np.zeros((n_samples,))
+        current_pot = 0
 
-            # Decide which candidate is the best
-            best_candidate = None
-            best_pot = None
-            best_dist_sq = None
+        # Inizializza la lista delle distanze più vicine per ogni punto, e calcola il potenziale attuale per ogni cluster
+        for i, center_id in enumerate(centers):
+            distances = D[center_id, :]
+            closest_dist_sq_i = distances ** 2
+            current_pot_i = closest_dist_sq_i.sum()
+            closest_dist_sq[distances < closest_dist_sq_i] = distances[distances < closest_dist_sq_i] ** 2
+            current_pot += current_pot_i
+
+            # Per ogni centroide inizializzato, calcola la lista delle distanze dal centroide a ogni punto e la lista delle distanze più vicine.
+            # Inoltre, aggiorna il potenziale del cluster con la somma delle distanze quadrate dei punti più vicini.
+
+        # Update each cluster internally
+        for center_index, center_id in enumerate(centers):
+            cluster_indices = (labels == center_index)
+            cluster_distances = D[cluster_indices][:, cluster_indices]
+            cluster_pot = (cluster_distances ** 2).sum()
+            candidate_ids = np.arange(n_samples)[cluster_indices]
+            n_local_trials = max(int(2 * np.log(n_clusters)) ** 2, 1)
+
+            # Per ogni cluster, inizia la fase di aggiornamento interno
+            # Inizializza l'indice dei punti nel cluster, le distanze tra i punti e il potenziale del cluster.
+
             for trial in range(n_local_trials):
-                # Compute potential when including center candidate
-                new_dist_sq = np.minimum(
-                    closest_dist_sq, distance_to_candidates[trial]
-                )
-                new_pot = new_dist_sq.sum()
+                rand_vals = random_state_.random_sample() * cluster_pot
+                candidate_index = np.searchsorted(np.cumsum(cluster_distances.sum(axis=1)), rand_vals)
+                candidate_id = candidate_ids[candidate_index]
+                new_pot = ((D[candidate_id, cluster_indices]) ** 2).sum()
 
-                # Store result if it is the best local trial so far
-                if (best_candidate is None) or (new_pot < best_pot):
-                    best_candidate = candidate_ids[trial]
-                    best_pot = new_pot
-                    best_dist_sq = new_dist_sq
+                # Per ogni tentativo di aggiornamento interno, scegli casualmente un punto nel cluster e calcola la nuova distanza dal centroide
+                # se venisse sostituito dal punto scelto.
+                # Se il potenziale del cluster diminuisce, sostituisci il centroide con il punto scelto e aggiorna le distanze tra i punti.
 
-            centers[cluster_index] = best_candidate
-            current_pot = best_pot
-            closest_dist_sq = best_dist_sq
+                if new_pot < cluster_pot:
+                    centers[center_index] = candidate_id
+                    cluster_distances[candidate_index] = D[candidate_id, cluster_indices]
+                    cluster_distances[:, candidate_index] = D[cluster_indices, candidate_id]
+                    cluster_pot = new_pot
 
+        # Ritorna i nuovi centri dei cluster aggiornati internamente
         return centers
+

@@ -244,7 +244,7 @@ def clustering(distanze: list, t:int, best_medoids = None, key: int = None):
     else:
         #ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
         #medoidi desiderati
-        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",best_medoids=best_medoids, max_iter=0)
+        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",best_medoids=best_medoids)
 
     # Eseguo il clustering
     kmedoids_.fit(distance_matrix)
