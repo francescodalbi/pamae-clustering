@@ -74,7 +74,7 @@ class ClasseDePissio(KMedoids):
         closest_dist_sq = np.zeros((n_samples,))
         current_pot = 0
 
-        # Inizializza la lista delle distanze più vicine per ogni punto, e calcola il potenziale attuale per ogni cluster
+        # Inizializza la lista delle sample più vicine per ogni punto, e calcola il potenziale attuale per ogni cluster
         for i, center_id in enumerate(centers):
             distances = D[center_id, :]
             closest_dist_sq_i = distances ** 2
@@ -82,8 +82,8 @@ class ClasseDePissio(KMedoids):
             closest_dist_sq[distances < closest_dist_sq_i] = distances[distances < closest_dist_sq_i] ** 2
             current_pot += current_pot_i
 
-            # Per ogni centroide inizializzato, calcola la lista delle distanze dal centroide a ogni punto e la lista delle distanze più vicine.
-            # Inoltre, aggiorna il potenziale del cluster con la somma delle distanze quadrate dei punti più vicini.
+            # Per ogni centroide inizializzato, calcola la lista delle sample dal centroide a ogni punto e la lista delle sample più vicine.
+            # Inoltre, aggiorna il potenziale del cluster con la somma delle sample quadrate dei punti più vicini.
 
         # Update each cluster internally
         for center_index, center_id in enumerate(centers):
@@ -94,7 +94,7 @@ class ClasseDePissio(KMedoids):
             n_local_trials = max(int(2 * np.log(n_clusters)) ** 2, 1)
 
             # Per ogni cluster, inizia la fase di aggiornamento interno
-            # Inizializza l'indice dei punti nel cluster, le distanze tra i punti e il potenziale del cluster.
+            # Inizializza l'indice dei punti nel cluster, le sample tra i punti e il potenziale del cluster.
 
             for trial in range(n_local_trials):
                 rand_vals = random_state_.random_sample() * cluster_pot
@@ -104,7 +104,7 @@ class ClasseDePissio(KMedoids):
 
                 # Per ogni tentativo di aggiornamento interno, scegli casualmente un punto nel cluster e calcola la nuova distanza dal centroide
                 # se venisse sostituito dal punto scelto.
-                # Se il potenziale del cluster diminuisce, sostituisci il centroide con il punto scelto e aggiorna le distanze tra i punti.
+                # Se il potenziale del cluster diminuisce, sostituisci il centroide con il punto scelto e aggiorna le sample tra i punti.
 
                 if new_pot < cluster_pot:
                     centers[center_index] = candidate_id
