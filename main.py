@@ -1,17 +1,19 @@
-from typing import Iterable, Tuple, NamedTuple, List
+from __future__ import annotations
 
+import pprint
 import random
+from dataclasses import dataclass
+from typing import List
+from typing import Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pyspark as ps
 from pyspark.sql import SparkSession
 from sklearn.metrics.pairwise import manhattan_distances
 from sklearn_extra.cluster import KMedoids
+
 from classeDePissio import ClasseDePissio
-import matplotlib.pyplot as plt
-import pprint
-from typing import List
-
-
 
 # Create SparkSession
 spark = SparkSession.builder \
@@ -20,13 +22,15 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(lambda line: line.split(",")).map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(
+    lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x))
 
 
-def to_float_conversion(l: List[str]) -> np.ndarray[float]:
-    float_lst = np.float_(l)
+def to_float_conversion(line: List[str]) -> np.ndarray[float]:
+    float_lst = np.float_(line)
     return float_lst
+
 
 def distributed_sampling_and_global_search(
         dataset: ps.RDD[np.ndarray[float]],
@@ -48,24 +52,19 @@ def distributed_sampling_and_global_search(
     :return:
     """
 
-    samples = get_random_samples(dataset, m=n_bins, n=sample_size)
+    samples: ps.RDD[Sample] = get_random_samples(ds_import, n_bins, sample_size)
     print(samples.collect())
     best_medoids = global_search(samples, t, sample_size)
     refinement(best_medoids, dataset, t)
 
 
-class Sample(NamedTuple):
+@dataclass
+class Sample:
     key: int
     rows: List[np.ndarray[float]]
 
 
-class Bin(Sample):
-    """
-    Creo una classe per definire un tipo di dato che uso spesso.
-    In questo caso dato che Bin è lo stesso tipo di dato di Sample, lo passo come parametro e Bin eredita le proprietà
-    di Sample.
-    """
-    pass
+
 
 
 def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps.RDD[Sample]:
@@ -90,42 +89,38 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
     print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
-
-
-    #List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
+    # List è un "interfaccia" che mi permette di generalizzare i tipi di lista suggeriti in input
     # https://docs.python.org/3/library/typing.html
-    # TODO: verificare la struttura dati se è corretta
-    ds_grouped: ps.RDD[Tuple[int, np.ndarray[np.ndarray[float]]]] = sc.parallelize(
+    ds_grouped: ps.RDD[Tuple[int, List[np.ndarray[float]]]] = sc.parallelize(
         ds_with_mod.groupByKey().mapValues(list).collect())
 
-    # TODO: perchè bin? devo rinominarlo, in teoria non serve più
-    def get_first_n_of_bin(bin_: Tuple[int, np.ndarray[np.ndarray[float]]]) -> Sample:
-       return Sample(key=bin_[0], rows=bin_[1][:n])
+    def create_sample(row: Tuple[int, List[np.ndarray[float]]]) -> Sample:
+        return Sample(row[0], row[1][:n])
 
-    ds_samples = ds_grouped.map(lambda row: (row[0], row[1][:n]))
+    ds_samples = ds_grouped.map(create_sample)
+    #ds_samples = ds_grouped.map(lambda row: Sample(row[0], row[1][:n]))
+    print("DS_SAMPLES: ", type(ds_samples))
+    # Aggiungi questa riga di codice per stampare la struttura di row
     return ds_samples
 
-def global_search(samples: ps.RDD[np.ndarray[float]], t: int, sample_size: int) -> np.ndarray:
+
+def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarray:
     """
     Phase I except for the sampling part
 
-    :param samples: collection of objects (rows) from the dataset
+    :param samples: collection of objects Sample
     :param t: number of cluster (medoids)
     :param sample_size: sample size
     :return: 1D array of k elements containing the best medoids among the optimal medoids of each sample
     """
-
-    #sample[0] = key
-    #sample[1] = values
-    rdd_global_search = samples.map(lambda sample: clustering(sample[1], t, None, sample[0]))
-
+    rdd_global_search = samples.map(lambda sample: clustering(sample.rows, t, None, sample.key))
     # inizializza l'array degli errori
     errors = np.empty([0, 3])
 
     # salvo i risultati
     result = rdd_global_search.collect()
 
-    #stampo i risultati
+    # stampo i risultati
     for key, value in result:
         print(f"Campione {key}:")
         for i, cluster in enumerate(value['clusters']):
@@ -160,9 +155,8 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int, sample_size: int) 
     print("Normalized Error: ", normalized_errors)
     best_medoids = errori_ord[0, 0:2]
 
-
     # TODO: commentare bene i comandi della libreria
-    #plot dei risultati
+    # plot dei risultati
     # plot dei risultati
     for key, value in result:
         plt.figure()
@@ -194,10 +188,11 @@ def global_search(samples: ps.RDD[np.ndarray[float]], t: int, sample_size: int) 
     plt.legend()
     plt.show()
     """
-    print("BEST MEDOIDS: ",type(best_medoids))
+    print("BEST MEDOIDS: ", type(best_medoids))
     return best_medoids
 
-def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> list[dict]:
+
+def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> list[dict]:
     """
     Phase 2 of the algorithm presented in the PAMAE paper
     :param best_medoids: collection of the (ids of the) best medoids found in phase 1
@@ -211,7 +206,7 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> list[dict]:
             - error: a numerical value representing the clustering error calculated for the current iteration.
     """
 
-    #serializzo il collect di dataset per unire tutti gli array in una sola riga
+    # serializzo il collect di dataset per unire tutti gli array in una sola riga
     rdd_array = sc.parallelize(dataset.collect())
 
     # Otteniamo una lista di array dal RDD
@@ -220,7 +215,7 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> list[dict]:
     # Creiamo una nuova RDD a partire dalla lista di array
     rdd_tuple = sc.parallelize([(array_list,)])
 
-    #eseguo in maniera distribuita il clustering, row[0] è l'insieme dei punti del dataset intero
+    # eseguo in maniera distribuita il clustering, row[0] è l'insieme dei punti del dataset intero
     rdd_refinement = rdd_tuple.map(lambda row: clustering(row[0], t, best_medoids))
     result = rdd_refinement.collect()
 
@@ -229,13 +224,13 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> list[dict]:
     pp = pprint.PrettyPrinter(indent=2)
     pp.pprint(result)
 
-    #calcolo l'errore relativo (ponderato in base al numero di punti)
+    # calcolo l'errore relativo (ponderato in base al numero di punti)
     dataset_size = dataset.count()
     total_error = result[-1]['error']
     normalized_error = (total_error / dataset_size)
     print("Normalized Error: ", normalized_error)
 
-    #plot dei risultati
+    # plot dei risultati
     for value in result:
         plt.figure()
         for i, cluster in enumerate(value['clusters']):
@@ -247,7 +242,25 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t:int) -> list[dict]:
         plt.title("Clusters on the full dataset")
         plt.show()
 
-def clustering(sample: list, t:int, best_medoids = None, key: int = None):
+
+    import pymongo
+    import bson
+
+    # Connessione al database MongoDB
+    client = pymongo.MongoClient("mongodb://localhost:27017/")
+
+    # Selezione del database e della collezione
+    db = client["pamae"]
+    collection = db["clustering_ouput"]
+
+    # Codificare i dati in BSON
+    encoded_data = [bson.BSON.encode(d) for d in result]
+
+    # Inserire i dati nella collezione "results"
+    collection.insert_many(encoded_data)
+
+
+def clustering(sample: list, t: int, best_medoids=None, key: int = None):
     """
 
     :param sample: values from samples
@@ -278,9 +291,10 @@ def clustering(sample: list, t:int, best_medoids = None, key: int = None):
     if best_medoids is None:
         kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     else:
-        #ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
-        #medoidi desiderati
-        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam", best_medoids=best_medoids)
+        # ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
+        # medoidi desiderati
+        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",
+                                   best_medoids=best_medoids)
 
     # Eseguo il clustering
     kmedoids_.fit(distance_matrix)
@@ -311,5 +325,5 @@ def clustering(sample: list, t:int, best_medoids = None, key: int = None):
         return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
 
 
-#launching the algorithm
+# launching the algorithm
 distributed_sampling_and_global_search(ds_import, 2, 1100, 4)
