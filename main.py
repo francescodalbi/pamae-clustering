@@ -15,6 +15,9 @@ from sklearn_extra.cluster import KMedoids
 
 from classeDePissio import ClasseDePissio
 
+import json
+import pymongo
+
 # Create SparkSession
 spark = SparkSession.builder \
     .master("local[*]") \
@@ -55,17 +58,14 @@ def distributed_sampling_and_global_search(
     samples: ps.RDD[Sample] = get_random_samples(ds_import, n_bins, sample_size)
     print(samples.collect())
     best_medoids = global_search(samples, t, sample_size)
-    refinement(best_medoids, dataset, t)
+    clustering_result = refinement(best_medoids, dataset, t)
+    export_to_mongo(clustering_result)
 
 
 @dataclass
 class Sample:
     key: int
     rows: List[np.ndarray[float]]
-
-
-
-
 
 def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps.RDD[Sample]:
     """
@@ -102,6 +102,96 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     print("DS_SAMPLES: ", type(ds_samples))
     # Aggiungi questa riga di codice per stampare la struttura di row
     return ds_samples
+
+def clustering(sample: list, t: int, best_medoids=None, key: int = None):
+    """
+
+    :param sample: values from samples
+    :param t: number of clusters
+    :param best_medoids: set of best medoids from the  phase 1 (optional argument)
+    :param key: the key that identify each samples (optional argument)
+    :return:
+    """
+
+    def distances(values: list) -> np.ndarray:
+        """
+            >>> all_distances([[1, 2], [3, 4]])
+            >>> np.ndarray([\
+                [0., 4.],\
+                [4., 0.]\
+                ])
+
+            :param samples: set of objects (dataset rows) sampled from the full dataset
+            :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
+            """
+        data = np.array(values)
+        return manhattan_distances(data, data)
+
+    # Calcolo la matrice di distanza
+    distance_matrix = distances(sample)
+
+    # Creo l'istanza del modello KMedoids
+    if best_medoids is None:
+        kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
+    else:
+        # ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
+        # medoidi desiderati
+        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",
+                                   best_medoids=best_medoids)
+
+    # Eseguo il clustering
+    kmedoids_.fit(distance_matrix)
+
+    # Recupero i medoidi
+    medoids_idx = kmedoids_.medoid_indices_
+    medoids = [sample[idx] for idx in medoids_idx]
+
+    # Calcolo l'errore di clustering e assegno ad ogni punto il cluster di appartenenza
+    labels = kmedoids_.labels_
+    error = 0
+    for i in range(len(sample)):
+        error += distance_matrix[i, medoids_idx[labels[i]]]
+
+    # Recupero i punti appartenenti ai cluster
+    clusters = [[] for _ in range(t)]
+    for i, label in enumerate(labels):
+        clusters[label].append(sample[i])
+
+    """
+    nelle fase di global_search ho una key che identifica ogni sample, mentre nel refinement (lavorando sul dataset
+    intero), non ho questa chiave. quindi disinguo due tipi di return, uno con la chiave per distingure i medoidi
+    per campione, e l'altro (che verrà usato per il refinement) no.
+    """
+    if key is None:
+        return {'medoids': medoids, 'clusters': clusters, 'error': error}
+    else:
+        return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
+
+def export_to_mongo(data: list[dict]):
+    # Connessione al server MongoDB
+    client = pymongo.MongoClient("mongodb://localhost:27017/")
+
+    # Selezione del database e della collezione
+    db = client["pamae"]
+    collection = db["clustering_output"]
+
+    class CustomEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            else:
+                return super(CustomEncoder, self).default(obj)
+
+    result_json = json.dumps(data, cls=CustomEncoder)
+    result_dict = json.loads(result_json)
+
+    print(result_dict)
+
+    collection.insert_many(result_dict)
 
 
 def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarray:
@@ -241,88 +331,7 @@ def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> list[dict]:
         plt.legend()
         plt.title("Clusters on the full dataset")
         plt.show()
-
-
-    import pymongo
-    import bson
-
-    # Connessione al database MongoDB
-    client = pymongo.MongoClient("mongodb://localhost:27017/")
-
-    # Selezione del database e della collezione
-    db = client["pamae"]
-    collection = db["clustering_ouput"]
-
-    # Codificare i dati in BSON
-    encoded_data = [bson.BSON.encode(d) for d in result]
-
-    # Inserire i dati nella collezione "results"
-    collection.insert_many(encoded_data)
-
-
-def clustering(sample: list, t: int, best_medoids=None, key: int = None):
-    """
-
-    :param sample: values from samples
-    :param t: number of clusters
-    :param best_medoids: set of best medoids from the  phase 1 (optional argument)
-    :param key: the key that identify each samples (optional argument)
-    :return:
-    """
-
-    def distances(values: list) -> np.ndarray:
-        """
-            >>> all_distances([[1, 2], [3, 4]])
-            >>> np.ndarray([\
-                [0., 4.],\
-                [4., 0.]\
-                ])
-
-            :param samples: set of objects (dataset rows) sampled from the full dataset
-            :return: 2D matrix where element ij is the distance between object (row) i and object (row) j
-            """
-        data = np.array(values)
-        return manhattan_distances(data, data)
-
-    # Calcolo la matrice di distanza
-    distance_matrix = distances(sample)
-
-    # Creo l'istanza del modello KMedoids
-    if best_medoids is None:
-        kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
-    else:
-        # ClasseDePissio è una classe che eredita KMedoids e sovrascrive una parte di essa per generare i cluster con i
-        # medoidi desiderati
-        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",
-                                   best_medoids=best_medoids)
-
-    # Eseguo il clustering
-    kmedoids_.fit(distance_matrix)
-
-    # Recupero i medoidi
-    medoids_idx = kmedoids_.medoid_indices_
-    medoids = [sample[idx] for idx in medoids_idx]
-
-    # Calcolo l'errore di clustering e assegno ad ogni punto il cluster di appartenenza
-    labels = kmedoids_.labels_
-    error = 0
-    for i in range(len(sample)):
-        error += distance_matrix[i, medoids_idx[labels[i]]]
-
-    # Recupero i punti appartenenti ai cluster
-    clusters = [[] for _ in range(t)]
-    for i, label in enumerate(labels):
-        clusters[label].append(sample[i])
-
-    """
-    nelle fase di global_search ho una key che identifica ogni sample, mentre nel refinement (lavorando sul dataset
-    intero), non ho questa chiave. quindi disinguo due tipi di return, uno con la chiave per distingure i medoidi
-    per campione, e l'altro (che verrà usato per il refinement) no.
-    """
-    if key is None:
-        return {'medoids': medoids, 'clusters': clusters, 'error': error}
-    else:
-        return (key, {'medoids': medoids, 'clusters': clusters, 'error': error})
+    return result
 
 
 # launching the algorithm
