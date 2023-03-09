@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pprint
 import random
 from dataclasses import dataclass
@@ -57,8 +55,8 @@ def pamae(
 
     samples: ps.RDD[Sample] = get_random_samples(ds_import, n_bins, sample_size)
     print(samples.collect())
-    best_medoids = global_search(samples, t, sample_size)
-    clustering_result = refinement(best_medoids, dataset, t)
+    best_medoids = parallel_seeding(samples, t, sample_size)
+    clustering_result = parallel_refinement(best_medoids, dataset, t)
     export_to_mongo(clustering_result)
 
 
@@ -89,6 +87,7 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     # Apply the "random_mod" function to each row of the dataset, resulting in an RDD of tuples with the "mod" value as key
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
 
+    # Todo: perchè len
     # Count the number of rows in each "mod" group and sort by key (mod value)
     print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
@@ -110,6 +109,7 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     return ds_samples
 
 
+#TODO: CONTROLLARE OUTPUT
 def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict or tuple:
     """
     Perform clustering using K-medoids algorithm.
@@ -208,9 +208,9 @@ def export_to_mongo(data: list[dict]):
     collection.insert_many(result_dict)
 
 
-def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarray:
+def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarray:
     """
-    Performs Phase I of PAM algorithm on the collection of samples.
+    Performs Phase I of PAMAE algorithm on the collection of samples.
 
     :param samples: collection of objects Sample
     :param t: number of cluster (medoids)
@@ -219,13 +219,14 @@ def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarr
     """
 
     # For each sample in the RDD, performs clustering and returns the results as a new RDD
-    rdd_global_search = samples.map(lambda sample: clustering(sample.rows, t, None, sample.key))
+    rdd_seeding = samples.map(lambda sample: clustering(sample.rows, t, None, sample.key))
 
+    #TODO: testare clustering a 4 colonne
     # Initialize the errors array
     errors = np.empty([0, 3])
 
     # Collect the results
-    result = rdd_global_search.collect()
+    result = rdd_seeding.collect()
 
     # Print the results
     for key, value in result:
@@ -238,16 +239,19 @@ def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarr
         for medoid in value['medoids']:
             print(medoid)
 
+        #TODO: verificare reshape
         # Add the error and medoids to the errors array
         errors = np.append(errors, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
         print(f"Clustering error: {value['error']}")
         print()
 
+
     # Sort the errors in ascending order
     sorted_errors = errors[errors[:, 2].argsort()]
+    print("SORTED ERRORS ", sorted_errors)
 
     # Print the set of best medoids
-    print(f"Set of best medoids: {sorted_errors[0, 0:2]}")
+    print(f"Set of best medoids: {value['medoids']}")
     print(f"Minimum error: {sorted_errors[0, 2]}")
 
     print("---------------------------------------------------------")
@@ -259,7 +263,7 @@ def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarr
     normalized_errors.append(error_rel)
 
     print("Normalized Error: ", normalized_errors)
-    best_medoids = sorted_errors[0, 0:2]
+    best_medoids = value['medoids']
 
     # Plot the results
     # plot the results for each sample
@@ -287,7 +291,7 @@ def global_search(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarr
     return best_medoids
 
 
-def refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> list[dict]:
+def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> list[dict]:
     """
     Phase 2 of the algorithm presented in the PAMAE paper
     :param best_medoids: collection of the (ids of the) best medoids found in phase 1

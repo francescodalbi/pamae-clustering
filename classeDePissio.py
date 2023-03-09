@@ -73,7 +73,6 @@ class ClasseDePissio(KMedoids):
         > n_clusters: an integer representing the number of seeds to choose.
         > random_state_: an instance of the RandomState class used to initialize the centers.
         > n_samples: an integer representing the number of samples in the dataset.
-        > centers: an array of shape (n_clusters,) representing the indices of the initial cluster centers.
         > closest_dist_sq: an array of shape (n_samples,) representing the squared distances between each sample and
             its nearest center.
         > current_pot: a float representing the current potential of the cluster.
@@ -123,6 +122,16 @@ class ClasseDePissio(KMedoids):
             # It also updates the cluster potential with the sum of the squared samples of the nearest points.
 
         # Update each cluster internally
+        """
+        In this for loop, center_index is used as the cluster index, while center_id is used as the index of the medoid 
+        corresponding to the cluster. Specifically, center_index is used to indicate the cluster that is created around 
+        the medoid center_id. 
+        In other words, center_index represents the number of the corresponding cluster, 
+        while center_id represents the index of the medoid (i.e., the corresponding row in the X array) 
+        that is used to define the center of the cluster.
+        In summary, center_index is used to denote the cluster, while center_id is used to denote the medoid 
+        that represents the center of the corresponding cluster.
+        """
         for center_index, center_id in enumerate(centers):
             cluster_indices = (labels == center_index)
             cluster_distances = D[cluster_indices][:, cluster_indices]
