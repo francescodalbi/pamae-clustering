@@ -23,7 +23,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/s1.csv").map(
     lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x))
 
@@ -239,8 +239,7 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.nd
         for medoid in value['medoids']:
             print(medoid)
 
-        #TODO: verificare reshape
-        # Add the error and medoids to the errors array
+
         errors = np.append(errors, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
         print(f"Clustering error: {value['error']}")
         print()
@@ -286,7 +285,6 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.nd
         plt.title(f"Sample {key}")
         # show the plot
         plt.show()
-
     print("Best Medoids: ", best_medoids)
     return best_medoids
 
@@ -363,9 +361,8 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
         plt.legend()
         plt.title("Clusters on the full dataset")
         plt.show()
-
     # Returning the list of dictionaries containing the results of each iteration of clustering
     return result
 
 
-pamae(ds_import, 2, 1000, 5)
+pamae(ds_import, 2, 500, 15)
