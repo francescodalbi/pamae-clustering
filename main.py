@@ -250,11 +250,6 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.nd
 
     print("---------------------------------------------------------")
 
-    # Calculate the relative errors
-    error_rel = best_tuple[1] / sample_size
-
-    print("Relative Error: ", error_rel)
-
     # Plot the results
     # plot the results for each sample
     for key, value in result:
@@ -314,12 +309,6 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
     print(type(result))
     pp = pprint.PrettyPrinter(indent=2)
     pp.pprint(result)
-
-    # Calculating the relative error (weighted by the number of points)
-    dataset_size = dataset.count()
-    total_error = result[-1]['error']
-    relative_error = (total_error / dataset_size)
-    print("Relative Error: ", relative_error)
 
     """
     This section is responsible for plotting the results of the clustering. It loops through each dictionary in 
