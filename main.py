@@ -221,9 +221,8 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.nd
     # For each sample in the RDD, performs clustering and returns the results as a new RDD
     rdd_seeding = samples.map(lambda sample: clustering(sample.rows, t, None, sample.key))
 
-    #TODO: testare clustering a 4 colonne
-    # Initialize the errors array
-    errors = np.empty([0, 3])
+    # Initialize the errors list
+    errors = []
 
     # Collect the results
     result = rdd_seeding.collect()
@@ -235,34 +234,26 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.nd
             print(f"Cluster {i}:")
             for point in cluster:
                 print(point)
-        print(f"Medoids:")
+        print("Medoids:")
         for medoid in value['medoids']:
             print(medoid)
-
-
-        errors = np.append(errors, np.array([medoid[0], medoid[1], value['error']]).reshape(1, -1), axis=0)
         print(f"Clustering error: {value['error']}")
+        #list of tuple that contains the medoids identified by sample key with the respective final clustering error
+        errors.append((key, value['error'], value['medoids']))
         print()
 
-
-    # Sort the errors in ascending order
-    sorted_errors = errors[errors[:, 2].argsort()]
-    print("SORTED ERRORS ", sorted_errors)
-
-    # Print the set of best medoids
-    print(f"Set of best medoids: {value['medoids']}")
-    print(f"Minimum error: {sorted_errors[0, 2]}")
+    # position 0 I have the key, 1 I have the final error, 2 the medoid set
+    best_tuple = min(errors, key=lambda x: x[1])
+    best_medoids = best_tuple[2]
+    print(f"Set of best medoids: {best_medoids}")
+    print(f"Minimum error: {best_tuple[1]}")
 
     print("---------------------------------------------------------")
 
     # Calculate the relative errors
-    normalized_errors = []
+    error_rel = best_tuple[1] / sample_size
 
-    error_rel = sorted_errors[0, 2] / sample_size
-    normalized_errors.append(error_rel)
-
-    print("Normalized Error: ", normalized_errors)
-    best_medoids = value['medoids']
+    print("Relative Error: ", error_rel)
 
     # Plot the results
     # plot the results for each sample
@@ -327,8 +318,8 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
     # Calculating the relative error (weighted by the number of points)
     dataset_size = dataset.count()
     total_error = result[-1]['error']
-    normalized_error = (total_error / dataset_size)
-    print("Normalized Error: ", normalized_error)
+    relative_error = (total_error / dataset_size)
+    print("Relative Error: ", relative_error)
 
     """
     This section is responsible for plotting the results of the clustering. It loops through each dictionary in 
