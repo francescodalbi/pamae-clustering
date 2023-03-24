@@ -8,10 +8,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyspark as ps
 from pyspark.sql import SparkSession
-from sklearn.metrics.pairwise import manhattan_distances
+from sklearn.metrics.pairwise import euclidean_distances
 from sklearn_extra.cluster import KMedoids
 
-from classeDePissio import ClasseDePissio
+from classLocalSearch import KMeoids_localsearch
 
 import json
 import pymongo
@@ -23,7 +23,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/s1.csv").map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(
     lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x))
 
@@ -54,7 +54,7 @@ def pamae(
     """
 
     samples: ps.RDD[Sample] = get_random_samples(ds_import, n_bins, sample_size)
-    print(samples.collect())
+    print(samples.take(1))
     best_medoids = parallel_seeding(samples, t, sample_size)
     clustering_result = parallel_refinement(best_medoids, dataset, t)
     export_to_mongo(clustering_result)
@@ -87,7 +87,8 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     # Apply the "random_mod" function to each row of the dataset, resulting in an RDD of tuples with the "mod" value as key
     ds_with_mod: ps.RDD[Tuple[int, np.ndarray[float]]] = dataset.map(lambda row: random_mod(row))
 
-    # Todo: perchè len
+    #Pass each value in the key-value pair RDD through a map function without changing the keys;
+    # this also retains the original RDD’s partitioning
     # Count the number of rows in each "mod" group and sort by key (mod value)
     print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
@@ -130,7 +131,7 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
         :return: A 2D matrix where element ij is the distance between object (row) i and object (row) j.
         """
         data = np.array(values)
-        return manhattan_distances(data, data)
+        return euclidean_distances(data, data)
 
     # Calculate the distance matrix
     distance_matrix = distances(sample)
@@ -141,8 +142,8 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
     else:
         # ClasseDePissio is a class that inherits from KMedoids and overrides part of it to generate clusters with desired
         # medoids
-        kmedoids_ = ClasseDePissio(n_clusters=t, init='random', metric='precomputed', method="pam",
-                                   best_medoids=best_medoids)
+        kmedoids_ = KMeoids_localsearch(n_clusters=t, init='random', metric='precomputed', method="pam",
+                                        best_medoids=best_medoids)
 
     # Perform clustering
     kmedoids_.fit(distance_matrix)
@@ -158,6 +159,8 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
         error += distance_matrix[i, medoids_idx[labels[i]]]
 
     # Retrieve points belonging to each cluster
+    # for _ in range means that you are not interested in how many times the loop is run till
+    # now just that it should run some specific number of times overall.
     clusters = [[] for _ in range(t)]
     for i, label in enumerate(labels):
         clusters[label].append(sample[i])
@@ -345,4 +348,4 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
     return result
 
 
-pamae(ds_import, 2, 500, 15)
+pamae(ds_import, 2, 500, 5)

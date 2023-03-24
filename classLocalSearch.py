@@ -3,14 +3,14 @@ from sklearn_extra.cluster import KMedoids
 import numpy as np
 
 """
-ClasseDePissio which extends the KMedoids class from the sklearn_extra.cluster module. 
+classLocalSearch which extends the KMedoids class from the sklearn_extra.cluster module. 
 This class  has some additional initialization parameters and overrides the _kpp_init method of the KMedoids class.
 
 The _kpp_init method is a helper function for initializing the medoids in the k-medoids clustering algorithm. 
 It uses a method similar to k-means++ to choose initial seeds for the medoids. 
 
 
-Best_medoids is an optional parameter of the ClassDePissio class that allows you to specify the initial medoids 
+Best_medoids is an optional parameter of the classLocalSearch class that allows you to specify the initial medoids 
 to be used for K-medoid clustering initialization. 
 If the parameter is passed, the algorithm will use the specified medoids for initialization, 
 otherwise it will use a default initialization method.
@@ -31,12 +31,12 @@ In this way, best_medoids provides an initial solution to the clustering problem
 and a better final solution
 """
 
-class ClasseDePissio(KMedoids):
+class KMeoids_localsearch(KMedoids):
 
     def __init__(
             self,
             n_clusters=8,
-            metric="euclidean",
+            metric="manhattan",
             method="alternate",
             init="heuristic",
             best_medoids=None,
@@ -52,13 +52,12 @@ class ClasseDePissio(KMedoids):
         self.best_medoids = best_medoids
 
 
- # Copied from sklearn.cluster.k_means_._k_init
     def _kpp_init(self, D, n_clusters, random_state_, n_local_trials=None):
         """Init n_clusters seeds with a method similar to k-means++
 
         Parameters
         -----------
-        D : array, shape (n_samples, n_samples)
+        D : array, shape (n_points, n_points)
             The distance matrix we will use to select medoid indices.
 
         n_clusters : integer
@@ -69,21 +68,21 @@ class ClasseDePissio(KMedoids):
 
         Legend
         -----
-        > D: an array of shape (n_samples, n_samples) representing the distance matrix used to select medoid indices.
+        > D: an array of shape (n_points, n_points) representing the distance matrix used to select medoid indices.
         > n_clusters: an integer representing the number of seeds to choose.
         > random_state_: an instance of the RandomState class used to initialize the centers.
-        > n_samples: an integer representing the number of samples in the dataset.
-        > closest_dist_sq: an array of shape (n_samples,) representing the squared distances between each sample and
+        > n_points: an integer representing the number of points in the dataset.
+        > closest_dist_sq: an array of shape (n_points,) representing the squared distances between each sample and
             its nearest center.
         > current_pot: a float representing the current potential of the cluster.
         > i: an integer representing the current iteration index of the for loop over the centers.
         > center_id: an integer representing the index of the current center being processed.
-        > distances: an array of shape (n_samples,) representing the distances between the current center and all the
+        > distances: an array of shape (n_points,) representing the distances between the current center and all the
             samples in the dataset.
-        > closest_dist_sq_i: an array of shape (n_samples,) representing the squared distances between each sample and
+        > closest_dist_sq_i: an array of shape (n_points,) representing the squared distances between each sample and
             its nearest center in the current iteration.
         > current_pot_i: a float representing the potential of the current center in the current iteration.
-        > cluster_indices: a boolean array of shape (n_samples,) representing whether each sample belongs to the current
+        > cluster_indices: a boolean array of shape (n_points,) representing whether each sample belongs to the current
             cluster being processed.
         > cluster_distances: an array of shape (n_cluster_samples, n_cluster_samples) representing the distances between
             all pairs of samples in the current cluster being processed.
@@ -96,7 +95,7 @@ class ClasseDePissio(KMedoids):
         > new_pot: a float representing the potential of the current cluster if the current center is replaced by
             the candidate sample.
         """
-        n_samples, _ = D.shape
+        n_points, _ = D.shape
 
         centers = np.empty(n_clusters, dtype=int)
 
@@ -106,7 +105,7 @@ class ClasseDePissio(KMedoids):
         # Initialize medoids with those found previously.
 
         # Initialize list of closest distances and calculate current potential for each cluster
-        closest_dist_sq = np.zeros((n_samples,))
+        closest_dist_sq = np.zeros((n_points,))
         current_pot = 0
 
         # Initialize the list of nearest samples for each point, and calculate the current potential for each cluster.
@@ -136,7 +135,7 @@ class ClasseDePissio(KMedoids):
             cluster_indices = (labels == center_index)
             cluster_distances = D[cluster_indices][:, cluster_indices]
             cluster_pot = (cluster_distances ** 2).sum()
-            candidate_ids = np.arange(n_samples)[cluster_indices]
+            candidate_ids = np.arange(n_points)[cluster_indices]
             n_local_trials = max(int(2 * np.log(n_clusters)) ** 2, 1)
 
             # For each cluster, the internal update phase begins.
