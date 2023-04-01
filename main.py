@@ -23,7 +23,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
-ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/google_review_ratings_2columns_allrows.csv").map(
+ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/s1.csv").map(
     lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x))
 
@@ -348,4 +348,4 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
     return result
 
 
-pamae(ds_import, 2, 500, 5)
+pamae(ds_import, 2, 500, 15)
