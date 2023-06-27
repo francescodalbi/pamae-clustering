@@ -23,6 +23,7 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 sc = spark.sparkContext
+#s1 ds source: https://cs.joensuu.fi/sipu/datasets/
 ds_import: ps.RDD[np.ndarray[float]] = sc.textFile("datasets/s1.csv").map(
     lambda line: line.split(",")).map(
     lambda x: to_float_conversion(x))
@@ -153,7 +154,7 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
 
     # Calculate clustering error
     labels = kmedoids_.labels_
-    print("LABELS: ", labels)
+    #print("LABELS: ", labels)
     error = 0
     for i in range(len(sample)):
         error += distance_matrix[i, medoids_idx[labels[i]]]
@@ -163,7 +164,10 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
     # now just that it should run some specific number of times overall.
     clusters = [[] for _ in range(t)]
     for i, label in enumerate(labels):
+        #print("sample[i]: ", sample[i])
         clusters[label].append(sample[i])
+        #print("label: ", label)
+        #print("cluster label: ", clusters[label])
 
     """
     In the global_search phase, I have a key that identifies each sample, whereas in the refinement (working on the
@@ -252,8 +256,7 @@ def parallel_seeding(samples: ps.RDD[Sample], t: int) -> np.ndarray:
 
     print("---------------------------------------------------------")
 
-    # Plot the results
-    # plot the results for each sample
+    # Pot the results for each sample
     for key, value in result:
         # create a new figure
         plt.figure()
@@ -314,24 +317,8 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
 
     """
     This section is responsible for plotting the results of the clustering. It loops through each dictionary in 
-    the result list, which represents a single iteration of clustering. 
+    the result list.
     For each dictionary, it creates a new figure and plots each cluster and its corresponding medoid.
-
-    > for value in result:: loop through each dictionary in the result list
-    > plt.figure(): create a new figure for each iteration
-    > for i, cluster in enumerate(value['clusters']):: loop through each cluster in the 'clusters' key of the 
-        current dictionary, using enumerate() to get both the index i and the cluster cluster
-    > cluster = np.array(cluster): convert the cluster list into a NumPy array for easier manipulation
-    > plt.scatter(cluster[:, 0], cluster[:, 1], label=f"Cluster {i}"): plot the points in the cluster on a scatter plot, 
-        using the first column for the x-axis and the second column for the y-axis. 
-        The label parameter is set to "Cluster i" to distinguish each cluster.
-    > medoid = np.array(value['medoids'][i]): get the medoid corresponding to the current cluster and 
-        convert it to a NumPy array
-    > plt.scatter(medoid[0], medoid[1], marker='x', s=200, linewidths=3, color='r'): plot the medoid as 
-        a red cross ('x') with a size of 200 and a linewidth of 3
-    > plt.legend(): show the legend for the plot, with labels for each cluster
-    > plt.title("Clusters on the full dataset"): set the title of the plot
-    > plt.show(): display the plot on the screen
     """
     for value in result:
         plt.figure()
@@ -347,4 +334,5 @@ def parallel_refinement(best_medoids: np.ndarray, dataset: ps.RDD, t: int) -> li
     return result
 
 
+#Launching the algorithm
 pamae(ds_import, 2, 500, 15)
