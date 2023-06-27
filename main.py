@@ -55,7 +55,7 @@ def pamae(
 
     samples: ps.RDD[Sample] = get_random_samples(ds_import, n_bins, sample_size)
     print(samples.take(1))
-    best_medoids = parallel_seeding(samples, t, sample_size)
+    best_medoids = parallel_seeding(samples, t)
     clustering_result = parallel_refinement(best_medoids, dataset, t)
     export_to_mongo(clustering_result)
 
@@ -92,7 +92,8 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     # Count the number of rows in each "mod" group and sort by key (mod value)
     print(sorted(ds_with_mod.groupByKey().mapValues(len).collect()))
 
-    # Group the rows by "mod" value and convert the resulting RDD to an RDD of tuples with "mod" as key and a list of rows as value
+    # Group the rows by "mod" value and convert the resulting RDD to an RDD of tuples with "mod" as key and a list
+    # of rows as value
     ds_grouped: ps.RDD[Tuple[int, List[np.ndarray[float]]]] = sc.parallelize(
         ds_with_mod.groupByKey().mapValues(list).collect())
 
@@ -110,7 +111,6 @@ def get_random_samples(dataset: ps.RDD[np.ndarray[float]], m: int, n: int) -> ps
     return ds_samples
 
 
-#TODO: CONTROLLARE OUTPUT
 def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict or tuple:
     """
     Perform clustering using K-medoids algorithm.
@@ -125,9 +125,9 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
 
     def distances(values: list) -> np.ndarray:
         """
-        Compute the pairwise Manhattan distance between a list of objects.
+        Compute the pairwise Euclidean distance between a list of objects.
 
-        :param values: A list of objects to compute pairwise Manhattan distance.
+        :param values: A list of objects to compute pairwise Euclidean distance.
         :return: A 2D matrix where element ij is the distance between object (row) i and object (row) j.
         """
         data = np.array(values)
@@ -140,8 +140,7 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
     if best_medoids is None:
         kmedoids_ = KMedoids(n_clusters=t, metric='precomputed', method="pam")
     else:
-        # ClasseDePissio is a class that inherits from KMedoids and overrides part of it to generate clusters with desired
-        # medoids
+        # It's inherited from KMedoids and overwrites part of it to generate clusters with the desired features.
         kmedoids_ = KMeoids_localsearch(n_clusters=t, init='random', metric='precomputed', method="pam",
                                         best_medoids=best_medoids)
 
@@ -152,8 +151,9 @@ def clustering(sample: list, t: int, best_medoids=None, key: int = None) -> dict
     medoids_idx = kmedoids_.medoid_indices_
     medoids = [sample[idx] for idx in medoids_idx]
 
-    # Calculate clustering error and assign cluster membership for each point
+    # Calculate clustering error
     labels = kmedoids_.labels_
+    print("LABELS: ", labels)
     error = 0
     for i in range(len(sample)):
         error += distance_matrix[i, medoids_idx[labels[i]]]
@@ -211,13 +211,12 @@ def export_to_mongo(data: list[dict]):
     collection.insert_many(result_dict)
 
 
-def parallel_seeding(samples: ps.RDD[Sample], t: int, sample_size: int) -> np.ndarray:
+def parallel_seeding(samples: ps.RDD[Sample], t: int) -> np.ndarray:
     """
     Performs Phase I of PAMAE algorithm on the collection of samples.
 
     :param samples: collection of objects Sample
     :param t: number of cluster (medoids)
-    :param sample_size: sample size
     :return: 1D array of k elements containing the best medoids among the optimal medoids of each sample
     """
 
