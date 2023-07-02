@@ -36,6 +36,9 @@ The algorithm saves the result of the processing in a MongoDB database
 This is the result on a benchmark dataset
 ![image](https://github.com/francescodalbi/pamae/assets/32592051/f6cf86f8-6a1d-4d66-bb0e-2b41d1e6d045)
 
+## Contributions
+
+Thank you for the suggestions provided: [Pierluigi](https://github.com/zACIID) and [Filippo](https://github.com/filippodaminato)
 
 ## License
 
@@ -45,7 +48,7 @@ This project is licensed under the MIT Licence. See the `LICENSE` file for more 
 
 If you have any questions or suggestions regarding Pamae, please feel free to contact us:
 
-- Email: [dalbellofrancesco.00@gmail.com]
+- Email: dalbellofrancesco.00@gmail.com
 - GitHub: [francescodalbi](https://github.com/francescodalbi)
 
 I appreciate your interest in my implementation of PAMAE and look forward to your feedback!
